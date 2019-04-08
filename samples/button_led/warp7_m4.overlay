@@ -1,0 +1,30 @@
+/{
+    leds {
+        compatible = "gpio-leds";
+        led_0: led_0 {
+            gpios = <&gpio7 7 GPIO_INT_ACTIVE_HIGH>; // Mikrobus int
+            label = "User LD0";
+        };
+
+        led_1: led_1 {
+            gpios = <&gpio7 6 GPIO_INT_ACTIVE_HIGH>; // Mikrobus rst 
+            label = "User LD1";
+        };
+
+        led_2: led_2 {
+            gpios = <&gpio7 8 GPIO_INT_ACTIVE_HIGH>; // Mikrobus pwm
+            label = "User LD2";
+        };
+
+        led_3: led_3 {
+            gpios = <&gpio7 8 GPIO_INT_ACTIVE_HIGH>; // Mikrobus ???
+            label = "User LD2";
+        };
+    };
+
+    aliases {
+        led0 = &led_0;
+        led1 = &led_1;
+        led2 = &led_2;
+    };
+};
