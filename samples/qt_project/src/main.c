@@ -43,10 +43,20 @@ struct bridge_t
 	} gpio;
 };
 
+/* Callback function*/
+typedef void (*callback_t)(struct device *port,
+				   struct gpio_callback *cb, u32_t pins);
+
 static struct bridge_t bridge;
+
 static struct gpio_callback gpio_cb;
+
+/* Initialiase Fifo*/
 K_FIFO_DEFINE(uart_fifo);
 
+/*
+	Inverse state of pin
+*/
 static void gpio_pin_toggle(struct device *port, u32_t pin)
 {
 	u32_t value = 0;
@@ -67,6 +77,7 @@ static void gpio_pin_toggle(struct device *port, u32_t pin)
 	}
 }
 
+/* Uart rx callback*/
 static void uart_irq_callback(struct device *uart)
 {
 	int rx;
@@ -90,6 +101,7 @@ static void uart_irq_callback(struct device *uart)
 			break;
 		}
 
+		/* Read character and send to mainthead with fifo */
 		rx = uart_fifo_read(uart, buffer, 1);
 		struct fifo_data_t data = {.data = buffer};
 		size_t size = sizeof(struct fifo_data_t);
@@ -102,29 +114,32 @@ static void uart_irq_callback(struct device *uart)
 	}
 }
 
+/* Gpio interrupt callback */
 void gpio_callback(struct device *port,
 				   struct gpio_callback *cb, u32_t pins)
 {
 	struct bridge_t *dev = &bridge;
-	printk("Button pressed at %d\n", k_cycle_get_32());
+
 	gpio_pin_toggle(dev->gpio.handle, LED0);
 	gpio_pin_toggle(dev->gpio.handle, LED1);
 	gpio_pin_toggle(dev->gpio.handle, LED2);
 	gpio_pin_toggle(dev->gpio.handle, LED3);
 }
 
+/* Thread */
 static void MainThread(void)
 {
 
 	struct bridge_t *dev = &bridge;
 	struct device *sw_dev;
+	callback_t gpioCallback = gpio_callback;
 
 	/* Enable gpio interrupt */
 	sw_dev = device_get_binding(SW0_GPIO_CONTROLLER);
 	__ASSERT_NO_MSG(sw_dev != NULL);
 
 	gpio_pin_configure(sw_dev, SW0_GPIO_PIN, GPIO_DIR_IN | GPIO_INT | PULL_UP | EDGE);
-	gpio_init_callback(&gpio_cb, gpio_callback, BIT(SW0_GPIO_PIN));
+	gpio_init_callback(&gpio_cb, gpioCallback, BIT(SW0_GPIO_PIN));
 	gpio_add_callback(sw_dev, &gpio_cb);
 	gpio_pin_enable_callback(sw_dev, SW0_GPIO_PIN);
 
@@ -171,4 +186,5 @@ static void MainThread(void)
 	}
 }
 
+/* Initialiase Thread */
 K_THREAD_DEFINE(MainThread_id, STACKSIZE, MainThread, NULL, NULL, NULL, PRIORITY, 0, K_NO_WAIT);
