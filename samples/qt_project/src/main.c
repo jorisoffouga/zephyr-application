@@ -5,15 +5,16 @@
 #include <misc/printk.h>
 #include <misc/__assert.h>
 #include <string.h>
+#include "util.h"
 
-#define LED_PORT LED0_GPIO_CONTROLLER
-#define LED0 LED0_GPIO_PIN
-#define LED1 LED1_GPIO_PIN
-#define LED2 LED2_GPIO_PIN
-#define LED3 LED3_GPIO_PIN
+#define LED_PORT DT_ALIAS_LED0_GPIOS_CONTROLLER
+#define LED0 DT_ALIAS_LED0_GPIOS_PIN
+#define LED1 DT_ALIAS_LED1_GPIOS_PIN
+#define LED2 DT_ALIAS_LED2_GPIOS_PIN
+#define LED3 DT_ALIAS_LED3_GPIOS_PIN
 #define UART_PORT "UART_2"
-#define SW_PORT SW0_GPIO_CONTROLLER
-#define SW_PIN Sw0_GPIO_PIN
+#define SW_PORT DT_ALIAS_SW0_GPIOS_CONTROLLER
+#define SW_PIN DT_ALIAS_SW0_GPIOS_PIN
 #define EDGE (GPIO_INT_EDGE | GPIO_INT_ACTIVE_LOW)
 
 #define PULL_UP 0
@@ -23,25 +24,6 @@
 
 /* scheduling priority used by each thread */
 #define PRIORITY 7
-
-struct fifo_data_t
-{
-	void *fifo_reserved;
-	u8_t *data;
-};
-
-struct bridge_t
-{
-	struct
-	{
-		struct device *handle;
-	} uart;
-
-	struct
-	{
-		struct device *handle;
-	} gpio;
-};
 
 /* Callback function*/
 typedef void (*callback_t)(struct device *port,
@@ -53,29 +35,6 @@ static struct gpio_callback gpio_cb;
 
 /* Initialiase Fifo*/
 K_FIFO_DEFINE(uart_fifo);
-
-/*
-	Inverse state of pin
-*/
-static void gpio_pin_toggle(struct device *port, u32_t pin)
-{
-	u32_t value = 0;
-	u8_t ret = gpio_pin_read(port, pin, &value);
-	if (ret < 0)
-	{
-		printk("Error gpio read");
-		return;
-	}
-
-	if (value)
-	{
-		gpio_pin_write(port, pin, 0);
-	}
-	else
-	{
-		gpio_pin_write(port, pin, 1);
-	}
-}
 
 /* Uart rx callback*/
 static void uart_irq_callback(struct device *uart)
@@ -135,13 +94,13 @@ static void MainThread(void)
 	callback_t gpioCallback = gpio_callback;
 
 	/* Enable gpio interrupt */
-	sw_dev = device_get_binding(SW0_GPIO_CONTROLLER);
+	sw_dev = device_get_binding(SW_PORT);
 	__ASSERT_NO_MSG(sw_dev != NULL);
 
-	gpio_pin_configure(sw_dev, SW0_GPIO_PIN, GPIO_DIR_IN | GPIO_INT | PULL_UP | EDGE);
-	gpio_init_callback(&gpio_cb, gpioCallback, BIT(SW0_GPIO_PIN));
+	gpio_pin_configure(sw_dev, SW_PIN, GPIO_DIR_IN | GPIO_INT | PULL_UP | EDGE);
+	gpio_init_callback(&gpio_cb, gpioCallback, BIT(SW_PIN));
 	gpio_add_callback(sw_dev, &gpio_cb);
-	gpio_pin_enable_callback(sw_dev, SW0_GPIO_PIN);
+	gpio_pin_enable_callback(sw_dev, SW_PIN);
 
 	/* Set LED pin as output */
 	dev->gpio.handle = device_get_binding(LED_PORT);
