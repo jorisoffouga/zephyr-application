@@ -1,0 +1,12 @@
+# Kconfig.lm75a - LM75A Temperate Sensor 
+
+#
+# Copyright (c) 2019 Joris OFFOUGA
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+menuconfig LM75A
+	bool "LM75A sensor"
+	depends on (I2C && HAS_DTS_I2C)
+	help
+		Enable driver for LM75A Temperate Sensor.

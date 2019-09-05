@@ -1,0 +1,14 @@
+/{
+    aliases {
+      i2c-3 = &i2c3;
+    };
+};
+
+&i2c3 {
+    status = "okay";
+    lm75a@4b {
+        compatible = "nxp,lm75a";
+        reg = <0x4b>;
+        label = "LM75A";
+    };
+};

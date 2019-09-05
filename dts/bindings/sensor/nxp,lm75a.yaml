@@ -1,0 +1,17 @@
+#
+# Copyright (c) 2019, Joris OFFOUGA
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: LM75A I2C Temperate Sensor
+
+description: >
+    This is a representation of the LM75A Temperate Sensor
+
+inherits:
+    !include i2c-device.yaml
+
+properties:
+    compatible:
+      constraint: "nxp,lm75a"
