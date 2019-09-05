@@ -1,18 +1,12 @@
-/*
- * Copyright (c) 2016 Intel Corporation
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include <zephyr.h>
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
-#define LED_PORT LED0_GPIO_CONTROLLER
-#define LED0 LED0_GPIO_PIN
-#define LED1 LED1_GPIO_PIN
-#define LED2 LED2_GPIO_PIN
-#define LED3 LED3_GPIO_PIN
+#define LED_PORT DT_ALIAS_LED0_GPIOS_CONTROLLER
+#define LED0 DT_ALIAS_LED0_GPIOS_PIN
+#define LED1 DT_ALIAS_LED1_GPIOS_PIN
+#define LED2 DT_ALIAS_LED2_GPIOS_PIN
+#define LED3 DT_ALIAS_LED3_GPIOS_PIN
 
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME 1000
