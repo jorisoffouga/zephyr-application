@@ -94,7 +94,7 @@ manifest:
       revision: fe9572dd5a9fcf93a249daa4233012692bd2881d
     - name: zephyr-application
       path: zephyr-application
-      revision: 8f0fee347b9d946f167d998cff3de223bd6d3656
+      revision: c069667bf038dcbff805a447ef6b701f2b2dbc79
       remote: jorisoffouga
   self:
     path: zephyr
