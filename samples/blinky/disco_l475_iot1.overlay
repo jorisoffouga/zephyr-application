@@ -1,0 +1,12 @@
+/{
+	leds{
+		led_wifi_ble: led_3{
+			gpios = <&gpioc 9 GPIO_INT_ACTIVE_HIGH>;
+			label = "User LD3";
+		};
+	};
+
+	aliases{
+		led2 = &led_wifi_ble;
+	};
+};
