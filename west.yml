@@ -93,6 +93,7 @@ manifest:
     - name: net-tools
       revision: 30b7efa827b04d2e47840716b0372737fe7d6c92
       path: tools/net-tools
+      remote: zephyr
     - name: nffs
       revision: bc62a2fa9d98ddb5d633c932ea199bc68e10f194
       path: modules/fs/nffs
@@ -121,8 +122,5 @@ manifest:
       path: modules/fs/littlefs
       revision: fe9572dd5a9fcf93a249daa4233012692bd2881d
       remote: zephyr
-    - name: zephyr-application
-      path: zephyr-application
-      revision: 1372e857f3c68cf03e1580081132cfecb14b7198
   self:
     path: zephyr-application
