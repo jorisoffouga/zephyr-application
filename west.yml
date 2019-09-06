@@ -124,6 +124,6 @@ manifest:
       remote: zephyr
     - name: zephyr-application
       path: zephyr-application
-      revision: c069667bf038dcbff805a447ef6b701f2b2dbc79
+      revision: 1372e857f3c68cf03e1580081132cfecb14b7198
   self:
     path: zephyr-application
