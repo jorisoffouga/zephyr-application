@@ -26,5 +26,6 @@ void main(void)
 		/* Print gyro x,y,z */
 		printf("Temp is %d (%d micro)\n", temp.val1,
                 temp.val2);
+		k_sleep(1500);
 	}
 }

@@ -20,44 +20,26 @@ LOG_MODULE_REGISTER(LM75A, CONFIG_SENSOR_LOG_LEVEL);
 
 #define LM75A_REG_TEMP 0x00
 
-int lm75a_reg_read(struct device *dev, u8_t reg)
-{
-	struct lm75a_data *data = dev->driver_data;
-	const struct lm75a_config *config = dev->config->config_info;
-	u16_t *val = &data->temp;
-
-	struct i2c_msg msgs[2] = {
-		{
-			.buf = &reg,
-			.len = 1,
-			.flags = I2C_MSG_WRITE | I2C_MSG_RESTART,
-		},
-		{
-			.buf = (u8_t *)val,
-			.len = 2,
-			.flags = I2C_MSG_READ | I2C_MSG_STOP,
-		},
-	};
-
-	if (i2c_transfer(data->i2c, msgs, 2, config->i2c_address) < 0) {
-		return -EIO;
-	}
-
-	*val = sys_be16_to_cpu(*val);
-
-	return 0;
-}
-
 static int lm75a_sample_fetch(struct device *dev, enum sensor_channel chan)
 {
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_AMBIENT_TEMP);
 
-	if (lm75a_reg_read(dev, LM75A_REG_TEMP) < 0) {
-		return -EIO;
+	int retval;
+	u8_t hum[2];
+	struct lm75a_data *data = dev->driver_data;
+	const struct lm75a_config *config = dev->config->config_info;
+
+	retval = i2c_burst_read(data->i2c,  config->i2c_address,
+		LM75A_REG_TEMP, hum, sizeof(hum));
+
+	if (retval == 0) {
+		data->temp = (hum[0] << 8) | hum[1];
+	} else {
+		LOG_ERR("read register err");
 	}
 
-	return 0;
+	return retval;
 }
 
 static int lm75a_channel_get(struct device *dev,
@@ -71,7 +53,7 @@ static int lm75a_channel_get(struct device *dev,
 		return -ENOTSUP;
 	}
 
-	uval = (s32_t) ((data->temp >> 5) * 0.125);
+	uval = (s32_t) (((data->temp >> 5) / 8) * 1000);
 	val->val1 = uval;
 	val->val2 = uval;
 

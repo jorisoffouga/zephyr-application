@@ -22,7 +22,7 @@ struct lm75a_config {
 
 struct lm75a_data {
 	struct device *i2c;
-	s16_t temp;
+	u16_t temp;
 
 #ifdef CONFIG_LM75A_TRIGGER
 	struct device *gpio;
