@@ -1,10 +1,4 @@
-/{
-    aliases {
-      i2c-3 = &i2c3;
-    };
-};
-
-&i2c3 {
+&i2c0 {
     status = "okay";
     lm75a@4b {
         compatible = "nxp,lm75a";
