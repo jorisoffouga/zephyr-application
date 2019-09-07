@@ -64,7 +64,6 @@ int lm75a_init(struct device *dev)
 {
 	const struct lm75a_config *config = dev->config->config_info;
 	struct lm75a_data *data = dev->driver_data;
-	u8_t id;
 
 	data->i2c = device_get_binding(config->i2c_name);
 	if (data->i2c == NULL) {
