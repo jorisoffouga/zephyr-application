@@ -8,119 +8,119 @@ manifest:
     - name: civetweb
       url-base: https://github.com/civetweb
     - name: jorisoffouga
-      url-base: git@github.com:jorisoffouga/zephyr-application.git
+      url-base: https://github.com/jorisoffouga/zephyr-application.git
 
   #
   # Please add items below based on alphabetical order
   projects:
     - name: zephyr
-      revision: bce38ba98c6ca21850818d1d4ffafa5d8b4c29bd
+      revision: master
       path: zephyr
       west-commands: scripts/west-commands.yml
       remote: zephyr
     - name: hal_atmel
-      revision: 04ff67a0826a51041e51034faf8fc4d3eeacd846
+      revision: master
       path: modules/hal/atmel
       remote: zephyr
     - name: ci-tools
-      revision: d56f2dd3510e20fa8cf4aad442495c08a658113f
+      revision: master
       path: tools/ci-tools
       remote: zephyr
     - name: civetweb
       remote: civetweb
-      revision: 99129c5efc907ea613c4b73ccff07581feb58a7a
+      revision: master
       path: modules/lib/civetweb
     - name: esp-idf
-      revision: 6835bfc741bf15e98fb7971293913f770df6081f
+      revision: master
       path: modules/hal/esp-idf
       remote: zephyr
     - name: fatfs
-      revision: df96914dd989907f3a5de4cb95b116c2f305820d
+      revision: master
       path: modules/fs/fatfs
       remote: zephyr
     - name: hal_qmsi
-      revision: 9195fe6f97e4f7f25a3fc9e5a515f1b7af13762c
+      revision: master
       path: modules/hal/qmsi
       remote: zephyr
     - name: hal_cypress
-      revision: a12d92816a53a521d79cefcf5c38b9dc8a4fed6e
+      revision: master
       path: modules/hal/cypress
       remote: zephyr
     - name: hal_nordic
-      revision: 7bf2d404d0bf7f36d77d5090b5207f8b4676776c
+      revision: master
       path: modules/hal/nordic
       remote: zephyr
     - name: hal_openisa
-      revision: be5c01f86c96500def5079bcc58d2baefdffb6c8
+      revision: master
       path: modules/hal/openisa
       remote: zephyr
     - name: hal_microchip
-      revision: a92582bc65504fb1e8c9d2c86ec2c249d9203942
+      revision: master
       path: modules/hal/microchip
       remote: zephyr
     - name: hal_silabs
-      revision: 9151e614c23997074acd1096a3e8a9e5c255d5b9
+      revision: master
       path: modules/hal/silabs
       remote: zephyr
     - name: hal_st
-      revision: 0ec40aed8087f26bd9ac1b70fb5a6c326a6451aa
+      revision: master
       path: modules/hal/st
       remote: zephyr
     - name: hal_stm32
-      revision: 272281a1990ec7097f1844778955ed60fe28662a
+      revision: master
       path: modules/hal/stm32
       remote: zephyr
     - name: hal_ti
-      revision: 7a82e93e14766ef6e42df9915ea2ab8e3b952a8b
+      revision: master
       path: modules/hal/ti
       remote: zephyr
     - name: libmetal
-      revision: 45e630d6152824f807d3f919958605c4626cbdff
+      revision: master
       path: modules/hal/libmetal
       remote: zephyr
     - name: lvgl
-      revision: 6e3316da412649f02d133231078427e452f65db6
+      revision: master
       path: modules/lib/gui/lvgl
       remote: zephyr
     - name: mbedtls
-      revision: 4bba3b845453033b7ac9ecabb6cf694d8c1381a1
+      revision: master
       path: modules/crypto/mbedtls
       remote: zephyr
     - name: mcumgr
-      revision: 84934959d2d1722a23b7e7e200191ae4a6f96168
+      revision: master
       path: modules/lib/mcumgr
       remote: zephyr
     - name: net-tools
-      revision: 30b7efa827b04d2e47840716b0372737fe7d6c92
+      revision: master
       path: tools/net-tools
       remote: zephyr
     - name: nffs
-      revision: bc62a2fa9d98ddb5d633c932ea199bc68e10f194
+      revision: master
       path: modules/fs/nffs
       remote: zephyr
     - name: hal_nxp
-      revision: 5852d8f66e454f66f0a8484a9f2309f392a78026
+      revision: master
       path: modules/hal/nxp
       remote: zephyr
     - name: open-amp
-      revision: 9b591b289e1f37339bd038b5a1f0e6c8ad39c63a
+      revision: master
       path: modules/lib/open-amp
       remote: zephyr
     - name: openthread
-      revision: 0dbecf508e7a79aae8ed9631f1a63fc65478b213
+      revision: master
       path: modules/lib/openthread
       remote: zephyr
     - name: segger
-      revision: 6fcf61606d6012d2c44129edc033f59331e268bc
+      revision: master
       path: modules/debug/segger
       remote: zephyr
     - name: tinycbor
       path: modules/lib/tinycbor
-      revision: 31ae89e4b768612722620cb6cb173a0de4a19cc9
+      revision: master
       remote: zephyr
     - name: littlefs
       path: modules/fs/littlefs
-      revision: fe9572dd5a9fcf93a249daa4233012692bd2881d
+      revision: zephyr
       remote: zephyr
   self:
     path: zephyr-application
