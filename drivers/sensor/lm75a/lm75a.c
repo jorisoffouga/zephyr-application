@@ -6,19 +6,25 @@
 
 #include <device.h>
 #include <i2c.h>
-#include <gpio.h>
+#include <sensor.h>
 #include <misc/byteorder.h>
 #include <misc/util.h>
-#include <kernel.h>
-#include <sensor.h>
 #include <misc/__assert.h>
 #include <logging/log.h>
-
-#include "lm75a.h"
 
 LOG_MODULE_REGISTER(LM75A, CONFIG_SENSOR_LOG_LEVEL);
 
 #define LM75A_REG_TEMP 0x00
+
+struct lm75a_config {
+	char *i2c_name;
+	u8_t i2c_address;
+};
+
+struct lm75a_data {
+	struct device *i2c;
+	u16_t temp;
+};
 
 static int lm75a_sample_fetch(struct device *dev, enum sensor_channel chan)
 {
@@ -26,15 +32,15 @@ static int lm75a_sample_fetch(struct device *dev, enum sensor_channel chan)
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_AMBIENT_TEMP);
 
 	int retval;
-	u8_t hum[2];
+	u8_t temp[2];
 	struct lm75a_data *data = dev->driver_data;
 	const struct lm75a_config *config = dev->config->config_info;
 
 	retval = i2c_burst_read(data->i2c,  config->i2c_address,
-		LM75A_REG_TEMP, hum, sizeof(hum));
+		LM75A_REG_TEMP, temp, sizeof(temp));
 
 	if (retval == 0) {
-		data->temp = (hum[0] << 8) | hum[1];
+		data->temp = (temp[0] << 8) | temp[1];
 	} else {
 		LOG_ERR("read register err");
 	}
