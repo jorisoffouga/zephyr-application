@@ -31,21 +31,21 @@ static int lm75a_sample_fetch(struct device *dev, enum sensor_channel chan)
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_AMBIENT_TEMP);
 
-	int retval;
+	int ret;
 	u8_t temp[2];
 	struct lm75a_data *data = dev->driver_data;
 	const struct lm75a_config *config = dev->config->config_info;
 
-	retval = i2c_burst_read(data->i2c,  config->i2c_address,
+	ret = i2c_burst_read(data->i2c,  config->i2c_address,
 		LM75A_REG_TEMP, temp, sizeof(temp));
 
-	if (retval == 0) {
+	if (ret == 0) {
 		data->temp = (temp[0] << 8) | temp[1];
 	} else {
 		LOG_ERR("read register err");
 	}
 
-	return retval;
+	return ret;
 }
 
 static int lm75a_channel_get(struct device *dev,
