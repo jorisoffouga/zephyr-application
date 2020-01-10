@@ -27,4 +27,15 @@
         led1 = &led_1;
         led2 = &led_2;
     };
+
 };
+
+// &i2c4 {
+
+// 	mcp2308: mcp2308@20 {
+// 		compatible = "microchip,mcp2308";
+// 		reg = <0x20>;
+// 		status = "okay";
+// 	};
+
+// };
