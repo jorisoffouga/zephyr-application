@@ -3,15 +3,37 @@
 #include <drivers/sensor.h>
 #include <uart.h>
 
-#define UART_PORT "UART_2"
-#define BME280 "BME280"
-/* size of stack area used by each thread */
-#define STACKSIZE 1024
+#define UART_PORT 	"UART_2"
+#define BME280 			"BME280"
+#define STACKSIZE 	1024			/* size of stack area used by each thread */
+#define PRIORITY 		7					/* scheduling priority used by each thread */
+#define TEMPERATURE	0
+#define PRESSION		1
+#define HUMIDITE 		2
 
-/* scheduling priority used by each thread */
-#define PRIORITY 7
+u8_t data[6];
+struct sensor_value temp, press, humidity;
 
-// static struct bridge_t bridge;
+
+void concatene(u8_t *array, struct sensor_value* temp, struct sensor_value* press, struct sensor_value* humidity){
+	array[0] = (s8_t)temp->val1;
+	array[1] = (s8_t)temp->val2;
+	array[2] = (s8_t)press->val1;
+	array[3] = (s8_t)press->val2;
+	array[4] = (s8_t)humidity->val1;
+	array[5] = (s8_t)humidity->val2;
+}
+
+void send_data( struct device *uart, s8_t* data, u8_t type){
+	/* 	0 --> temp
+			1 --> press
+			2 --> humidity */
+	uart_poll_out(uart, 0x55);
+	uart_poll_out(uart, 0x02);
+	uart_poll_out(uart, type);
+	uart_poll_out(uart, data[(type*2)]);
+	uart_poll_out(uart, data[(type*2)+1]);
+}
 
 void main(void)
 {
@@ -31,17 +53,19 @@ void main(void)
 	printk("dev %p name %s\n", bme280, bme280->config->name);
 
 	while (1) {
-		struct sensor_value temp, press, humidity;
-
 		sensor_sample_fetch(bme280);
 		sensor_channel_get(bme280, SENSOR_CHAN_AMBIENT_TEMP, &temp);
 		sensor_channel_get(bme280, SENSOR_CHAN_PRESS, &press);
 		sensor_channel_get(bme280, SENSOR_CHAN_HUMIDITY, &humidity);
 
-		printk("temp: %d.%06d; press: %d.%06d; humidity: %d.%06d\n",
-		      temp.val1, temp.val2, press.val1, press.val2,
-		      humidity.val1, humidity.val2);
-		k_sleep(K_MSEC(1000));
+		concatene(data, &temp, &press, &humidity);
+
+		send_data(uart_handle, data, 0);
+		k_sleep(333);
+		send_data(uart_handle, data, 1);
+		k_sleep(333);
+		send_data(uart_handle, data, 2);
+		k_sleep(333);
 	}
 }
 
