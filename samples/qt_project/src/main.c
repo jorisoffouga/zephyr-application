@@ -2,8 +2,8 @@
 #include <device.h>
 #include <gpio.h>
 #include <uart.h>
-#include <misc/printk.h>
-#include <misc/__assert.h>
+#include <sys/printk.h>
+#include <sys/__assert.h>
 #include <string.h>
 #include "util.h"
 
@@ -113,7 +113,7 @@ static void MainThread(void)
 
 	/* uart setup */
 	dev->uart.handle = device_get_binding(UART_PORT);
-	__ASSERT_NO_MSG(dev->gpio.handle != NULL);
+	__ASSERT_NO_MSG(dev->uart.handle != NULL);
 
 	uart_irq_rx_disable(dev->uart.handle);
 	uart_irq_tx_disable(dev->uart.handle);

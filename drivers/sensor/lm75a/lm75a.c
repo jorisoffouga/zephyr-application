@@ -7,9 +7,9 @@
 #include <device.h>
 #include <i2c.h>
 #include <sensor.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
-#include <misc/__assert.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
+#include <sys/__assert.h>
 #include <logging/log.h>
 
 LOG_MODULE_REGISTER(LM75A, CONFIG_SENSOR_LOG_LEVEL);
