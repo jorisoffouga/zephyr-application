@@ -6,7 +6,7 @@
 #define UART_PORT 	"UART_2"
 #define BME280 		"BME280"
 
-void message_compose(u8_t *array, struct sensor_value* value, u8_t len, u8_t data_type){
+static void message_compose(u8_t *array, struct sensor_value* value, u8_t len, u8_t data_type){
 	array[0] = 0x55;
 	array[1] = len;
 	array[2] = data_type;
@@ -14,7 +14,7 @@ void message_compose(u8_t *array, struct sensor_value* value, u8_t len, u8_t dat
 	array[4] = (s8_t)value->val2;
 }
 
-void uart_send(struct device *uart, s8_t* data, u8_t len){
+static void uart_send(struct device *uart, s8_t* data, u8_t len){
 
 	for (u8_t i = 0; i < len; i++)
 	{
@@ -22,7 +22,7 @@ void uart_send(struct device *uart, s8_t* data, u8_t len){
 	}
 }
 
-void send_message(struct device *uart, struct sensor_value *value, u8_t data_type)
+static void send_message(struct device *uart, struct sensor_value *value, u8_t data_type)
 {
 	u8_t data[6];
 
