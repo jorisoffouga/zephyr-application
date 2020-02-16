@@ -3,124 +3,17 @@ manifest:
     remote: jorisoffouga
 
   remotes:
-    - name: zephyr
+    - name: zephyrproject-rtos
       url-base: https://github.com/zephyrproject-rtos
-    - name: civetweb
-      url-base: https://github.com/civetweb
     - name: jorisoffouga
       url-base: https://github.com/jorisoffouga/zephyr-application.git
 
-  #
-  # Please add items below based on alphabetical order
   projects:
     - name: zephyr
       revision: master
       path: zephyr
       west-commands: scripts/west-commands.yml
-      remote: zephyr
-    - name: hal_atmel
-      revision: master
-      path: modules/hal/atmel
-      remote: zephyr
-    - name: ci-tools
-      revision: master
-      path: tools/ci-tools
-      remote: zephyr
-    - name: civetweb
-      remote: civetweb
-      revision: master
-      path: modules/lib/civetweb
-    - name: esp-idf
-      revision: master
-      path: modules/hal/esp-idf
-      remote: zephyr
-    - name: fatfs
-      revision: master
-      path: modules/fs/fatfs
-      remote: zephyr
-    - name: hal_qmsi
-      revision: master
-      path: modules/hal/qmsi
-      remote: zephyr
-    - name: hal_cypress
-      revision: master
-      path: modules/hal/cypress
-      remote: zephyr
-    - name: hal_nordic
-      revision: master
-      path: modules/hal/nordic
-      remote: zephyr
-    - name: hal_openisa
-      revision: master
-      path: modules/hal/openisa
-      remote: zephyr
-    - name: hal_microchip
-      revision: master
-      path: modules/hal/microchip
-      remote: zephyr
-    - name: hal_silabs
-      revision: master
-      path: modules/hal/silabs
-      remote: zephyr
-    - name: hal_st
-      revision: master
-      path: modules/hal/st
-      remote: zephyr
-    - name: hal_stm32
-      revision: master
-      path: modules/hal/stm32
-      remote: zephyr
-    - name: hal_ti
-      revision: master
-      path: modules/hal/ti
-      remote: zephyr
-    - name: libmetal
-      revision: master
-      path: modules/hal/libmetal
-      remote: zephyr
-    - name: lvgl
-      revision: master
-      path: modules/lib/gui/lvgl
-      remote: zephyr
-    - name: mbedtls
-      revision: master
-      path: modules/crypto/mbedtls
-      remote: zephyr
-    - name: mcumgr
-      revision: master
-      path: modules/lib/mcumgr
-      remote: zephyr
-    - name: net-tools
-      revision: master
-      path: tools/net-tools
-      remote: zephyr
-    - name: nffs
-      revision: master
-      path: modules/fs/nffs
-      remote: zephyr
-    - name: hal_nxp
-      revision: master
-      path: modules/hal/nxp
-      remote: zephyr
-    - name: open-amp
-      revision: master
-      path: modules/lib/open-amp
-      remote: zephyr
-    - name: openthread
-      revision: master
-      path: modules/lib/openthread
-      remote: zephyr
-    - name: segger
-      revision: master
-      path: modules/debug/segger
-      remote: zephyr
-    - name: tinycbor
-      path: modules/lib/tinycbor
-      revision: master
-      remote: zephyr
-    - name: littlefs
-      path: modules/fs/littlefs
-      revision: zephyr
-      remote: zephyr
+      remote: zephyrproject-rtos
+      import: true
   self:
     path: zephyr-application
