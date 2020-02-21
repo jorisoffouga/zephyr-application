@@ -2,7 +2,7 @@
 #include <misc/printk.h>
 #include <misc/util.h>
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 #define SW0_PORT DT_ALIAS_SW0_GPIOS_CONTROLLER
 #define SW0_PIN DT_ALIAS_SW0_GPIOS_PIN

@@ -1,13 +1,14 @@
 #include <zephyr.h>
 #include <device.h>
 #include <drivers/sensor.h>
-#include <uart.h>
+#include <drivers/uart.h>
 
 #define UART_PORT 	"UART_2"
 #define BME280 		"BME280"
+#define SOF 0x55
 
 static void message_compose(u8_t *array, struct sensor_value* value, u8_t len, u8_t data_type){
-	array[0] = 0x55;
+	array[0] = SOF;
 	array[1] = len;
 	array[2] = data_type;
 	array[3] = (s8_t)value->val1;

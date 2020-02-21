@@ -1,7 +1,7 @@
 #include <zephyr.h>
 #include <device.h>
-#include <gpio.h>
-#include <uart.h>
+#include <drivers/gpio.h>
+#include <drivers/uart.h>
 #include <sys/printk.h>
 #include <sys/__assert.h>
 #include <string.h>

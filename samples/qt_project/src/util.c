@@ -1,5 +1,5 @@
 #include "util.h"
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 /*
 	Inverse state of pin

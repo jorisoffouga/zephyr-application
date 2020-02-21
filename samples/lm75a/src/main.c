@@ -5,8 +5,7 @@
 
 #include <zephyr.h>
 #include <device.h>
-#include <sensor.h>
-#include <stdio.h>
+#include <drivers/sensor.h>
 
 void main(void)
 {
@@ -14,7 +13,7 @@ void main(void)
 	struct device *dev = device_get_binding("LM75A");
 
 	if (!dev) {
-		printf("Could not get lm75a device\n");
+		printk("Could not get lm75a device\n");
 		return;
 	}
 
@@ -22,7 +21,7 @@ void main(void)
 		sensor_sample_fetch(dev);
 		sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
 
-		printf("Temp is %d (%d micro)\n", temp.val1,
+		printk("Temp is %d (%d micro)\n", temp.val1,
                 temp.val2);
 		k_sleep(1500);
 	}

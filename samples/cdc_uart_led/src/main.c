@@ -1,10 +1,10 @@
 #include <zephyr.h>
 #include <stdio.h>
 #include <device.h>
-#include <gpio.h>
-#include <uart.h>
-#include <misc/printk.h>
-#include <misc/__assert.h>
+#include <drivers/gpio.h>
+#include <drivers/uart.h>
+#include <sys/printk.h>
+#include <sys/__assert.h>
 #include <string.h>
 
 #define LED0_PORT DT_ALIAS_LED0_GPIOS_CONTROLLER
