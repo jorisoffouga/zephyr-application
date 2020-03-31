@@ -1,19 +1,10 @@
 manifest:
-  defaults:
-    remote: jorisoffouga
-
   remotes:
     - name: zephyrproject-rtos
       url-base: https://github.com/zephyrproject-rtos
-    - name: jorisoffouga
-      url-base: https://github.com/jorisoffouga/zephyr-application.git
 
   projects:
     - name: zephyr
-      revision: master
-      path: zephyr
-      west-commands: scripts/west-commands.yml
       remote: zephyrproject-rtos
+      revision: master
       import: true
-  self:
-    path: zephyr-application
