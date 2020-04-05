@@ -3,16 +3,16 @@
 #include <drivers/sensor.h>
 #include <drivers/uart.h>
 
-#define UART_PORT 	"UART_2"
-#define BME280 		"BME280"
+#define UART_PORT "UART_2"
+#define BME280	"BME280"
 #define SOF 0x55
 
-static void message_compose(u8_t *array, struct sensor_value* value, u8_t len, u8_t data_type){
-	array[0] = SOF;
-	array[1] = len;
-	array[2] = data_type;
-	array[3] = (s8_t)value->val1;
-	array[4] = (s8_t)value->val2;
+static void message_compose(u8_t *msg, struct sensor_value* value, u8_t len, u8_t data_type){
+	msg[0] = SOF;
+	msg[1] = len;
+	msg[2] = data_type;
+	msg[3] = (s8_t)value->val1;
+	msg[4] = (s8_t)value->val2;
 }
 
 static void uart_send(struct device *uart, s8_t* data, u8_t len){
@@ -58,8 +58,7 @@ void main(void)
 		for (u8_t i = 0; i < 3; i++)
 		{
 			send_message(uart_handle, &bme280_data[i], i);
-			k_sleep(1000);
+			k_sleep(Z_TIMEOUT_TICKS(1000));
 		}
-
 	}
 }
