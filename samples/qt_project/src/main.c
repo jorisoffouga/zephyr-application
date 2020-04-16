@@ -141,9 +141,9 @@ static void MainThread(void)
 			break;
 		}
 		k_free(data);
-		k_sleep(500);
+		k_sleep(Z_TIMEOUT_TICKS(500));
 	}
 }
 
 /* Initialiase Thread */
-K_THREAD_DEFINE(MainThread_id, STACKSIZE, MainThread, NULL, NULL, NULL, PRIORITY, 0, K_NO_WAIT);
+K_THREAD_DEFINE(MainThread_id, STACKSIZE, MainThread, NULL, NULL, NULL, PRIORITY, 0, 0);

@@ -23,6 +23,6 @@ void main(void)
 
 		printk("Temp is %d (%d micro)\n", temp.val1,
                 temp.val2);
-		k_sleep(1500);
+		k_sleep(Z_TIMEOUT_TICKS(1000));
 	}
 }

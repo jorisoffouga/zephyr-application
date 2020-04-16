@@ -1,6 +1,6 @@
 #include <zephyr.h>
-#include <misc/printk.h>
-#include <misc/util.h>
+#include <sys/printk.h>
+#include <sys/util.h>
 #include <device.h>
 #include <drivers/gpio.h>
 
@@ -33,26 +33,6 @@
 
 static struct gpio_callback gpio_cb;
 static struct device *led;
-
-static int gpio_pin_toggle(struct device *port, u32_t pin)
-{
-    u32_t value = 0;
-    u8_t ret = gpio_pin_read(port, pin, &value);
-    if (ret < 0)
-    {
-        printk("Error gpio read");
-        return -1;
-    }
-
-    if (value)
-    {
-        return gpio_pin_write(port, pin, 0);
-    }
-    else
-    {
-        return gpio_pin_write(port, pin, 1);
-    }
-}
 
 void gpio_callback(struct device *port,
                    struct gpio_callback *cb, u32_t pins)
@@ -123,6 +103,6 @@ void main(void)
 
     while (1)
     {
-        k_sleep(500);
+        k_sleep(Z_TIMEOUT_TICKS(500));
     }
 }

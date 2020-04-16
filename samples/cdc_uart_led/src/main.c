@@ -51,28 +51,6 @@ K_FIFO_DEFINE(cdc_fifo);
 
 static struct bridge_t bridge;
 
-static void gpio_pin_toggle(struct device *port, u32_t pin)
-{
-	u32_t value = 0;
-
-	u8_t ret = gpio_pin_read(port, pin, &value);
-
-	if (ret < 0)
-	{
-		printk("Error gpio read\n");
-		return;
-	}
-
-	if (value)
-	{
-		gpio_pin_write(port, pin, 0);
-	}
-	else
-	{
-		gpio_pin_write(port, pin, 1);
-	}
-}
-
 static void cdc_irq_callback(struct device *cdc)
 {
 	u8_t byte = 0;
@@ -171,7 +149,7 @@ static void uartThread(void *dummy1, void *dummy2, void *dummy3)
 			break;
 		}
 		k_free(data);
-		k_sleep(500);
+		k_sleep(Z_TIMEOUT_TICKS(500));
 	}
 }
 
@@ -230,12 +208,12 @@ static void cdcThread(void *dummy1, void *dummy2, void *dummy3)
 	{
 		struct fifo_data_t *data = k_fifo_get(&cdc_fifo, K_FOREVER);
 		uart_poll_out(dev->cdc.handle, *data->data);
-		k_sleep(500);
+		k_sleep(Z_TIMEOUT_TICKS(500));
 	}
 }
 
 K_THREAD_DEFINE(uartThread_id, STACKSIZE, uartThread, NULL, NULL, NULL,
-PRIORITY, 0, K_NO_WAIT);
+PRIORITY, 0, 0);
 
 K_THREAD_DEFINE(cdcThread_id, STACKSIZE, cdcThread, NULL, NULL, NULL,
-PRIORITY, 0, K_NO_WAIT);
+PRIORITY, 0, 0);

@@ -30,6 +30,6 @@ void main(void)
 		gpio_pin_write(dev, LED2, cnt % 2);
 		gpio_pin_write(dev, LED3, cnt % 2);
 		cnt++;
-		k_sleep(SLEEP_TIME);
+		k_sleep(Z_TIMEOUT_TICKS(SLEEP_TIME));
 	}
 }
