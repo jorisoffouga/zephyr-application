@@ -9,6 +9,8 @@ toolchain:
 ram: 128
 flash: 1024
 supported:
+  - can
   - pwm
   - counter
   - usb
+  - i2c
