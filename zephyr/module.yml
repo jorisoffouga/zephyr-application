@@ -1,6 +1,6 @@
 build:
   cmake: .
-  kconfig: Kconfig.za
+  kconfig: Kconfig
   settings:
     board_root: .
     dts_root: .
