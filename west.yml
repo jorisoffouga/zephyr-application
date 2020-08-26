@@ -8,3 +8,6 @@ manifest:
       remote: zephyrproject-rtos
       revision: master
       import: true
+
+  self:
+    path: zephyr-application
