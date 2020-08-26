@@ -35,7 +35,7 @@ static struct gpio_callback gpio_cb;
 static struct device *led;
 
 void gpio_callback(struct device *port,
-                   struct gpio_callback *cb, u32_t pins)
+                   struct gpio_callback *cb, uint32_t pins)
 {
     int ret;
 

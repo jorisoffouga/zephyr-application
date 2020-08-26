@@ -43,18 +43,18 @@ typedef enum
 typedef union
 {
     /* Representation of sensor union*/
-    u8_t datagen;
+    uint8_t datagen;
     
     struct {
-        u16_t degrees;
+        uint16_t degrees;
     }temp;
 
     struct {
-        u16_t percents;
+        uint16_t percents;
     }humidity;
 
     struct{
-        u16_t bar;
+        uint16_t bar;
     }pressure;
 
 }sensor_t;
@@ -65,8 +65,8 @@ typedef struct __attribute__((packed, aligned(1)))message_header_s
 	id_t id;
 	command_t cmd;
 	message_status_t status;
-	u8_t dataLen;
-    u8_t *dataPtr;
+	uint8_t dataLen;
+    uint8_t *dataPtr;
     sensor_t data;
 }message_t;
 
@@ -83,19 +83,19 @@ typedef struct __attribute__((packed, aligned(1)))message_header_s
  * @param msgRaw
  * return  size
  */
-size_t message_compose(u8_t **msgRaw, message_t *msg);
+size_t message_compose(uint8_t **msgRaw, message_t *msg);
 
 /*
  * @param rawData
  * return  msg
  */
-message_t *message_parse(u8_t *rawData);
+message_t *message_parse(uint8_t *rawData);
 
 /*
  * @param rawData
  * return  message_t *
  */
-message_t *message_alloc(u8_t size);
+message_t *message_alloc(uint8_t size);
 
 /*
  * @param msg

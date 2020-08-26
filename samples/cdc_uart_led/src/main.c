@@ -30,7 +30,7 @@
 struct fifo_data_t
 {
 	void *fifo_reserved;
-	u8_t *data;
+	uint8_t *data;
 };
 
 struct bridge_t
@@ -53,7 +53,7 @@ static struct bridge_t bridge;
 
 static void cdc_irq_callback(struct device *cdc)
 {
-	u8_t byte = 0;
+	uint8_t byte = 0;
 
 	while (uart_irq_update(cdc) && uart_irq_is_pending(cdc))
 	{
@@ -80,7 +80,7 @@ static void cdc_irq_callback(struct device *cdc)
 
 static void uart_irq_callback(struct device *uart)
 {
-	u8_t byte;
+	uint8_t byte;
 	while (uart_irq_update(uart) && uart_irq_is_pending(uart)){
 
 		if (!uart_irq_rx_ready(uart))
@@ -160,7 +160,7 @@ static void cdcThread(void *dummy1, void *dummy2, void *dummy3)
 	ARG_UNUSED(dummy3);
 
 	struct bridge_t *dev = &bridge;
-	u32_t baudrate, dtr = 0U;
+	uint32_t baudrate, dtr = 0U;
 	int ret;
 
 	dev->cdc.handle = device_get_binding("CDC_ACM_0");

@@ -27,7 +27,7 @@
 
 /* Callback function*/
 typedef void (*callback_t)(struct device *port,
-				   struct gpio_callback *cb, u32_t pins);
+				   struct gpio_callback *cb, uint32_t pins);
 
 static struct bridge_t bridge;
 
@@ -75,7 +75,7 @@ static void uart_irq_callback(struct device *uart)
 
 /* Gpio interrupt callback */
 void gpio_callback(struct device *port,
-				   struct gpio_callback *cb, u32_t pins)
+				   struct gpio_callback *cb, uint32_t pins)
 {
 	struct bridge_t *dev = &bridge;
 

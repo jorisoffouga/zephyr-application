@@ -4,10 +4,10 @@
 /*
 	Inverse state of pin
 */
-void gpio_pin_toggle(struct device *port, u32_t pin)
+void gpio_pin_toggle(struct device *port, uint32_t pin)
 {
-	u32_t value = 0;
-	u8_t ret = gpio_pin_read(port, pin, &value);
+	uint32_t value = 0;
+	uint8_t ret = gpio_pin_read(port, pin, &value);
 
 	if (ret < 0)
 	{

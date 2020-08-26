@@ -10,23 +10,23 @@
 #define SOF 0x55
 #define SIZE(a) sizeof (a) / sizeof *(a)
 
-static void uart_send(struct device *uart, s8_t* data, u8_t len){
+static void uart_send(struct device *uart, int8_t* data, uint8_t len){
 
-	for (u8_t i = 0; i < len; i++)
+	for (uint8_t i = 0; i < len; i++)
 	{
 		uart_poll_out(uart, data[i]);
 	}
 }
 
-static void send_message(struct device *uart, struct sensor_value *value, u8_t id)
+static void send_message(struct device *uart, struct sensor_value *value, uint8_t id)
 {
-	u8_t *rawMsg;
+	uint8_t *rawMsg;
 	size_t len;
 	//message_t *msg = NULL;
 	message_t msg;
 
 	memset(&msg, 0, sizeof(struct sensor_value) + sizeof(message_t));
-	u16_t rawValue = (value->val1 * 10^(6)) + (u16_t)(value->val2);
+	uint16_t rawValue = (value->val1 * 10^(6)) + (uint16_t)(value->val2);
 
 	//msg.dataPtr = &msg.data.datagen;
 
@@ -100,7 +100,7 @@ void main(void)
 		sensor_channel_get(bme280, SENSOR_CHAN_PRESS, &bme280_data[1]);
 		sensor_channel_get(bme280, SENSOR_CHAN_HUMIDITY, &bme280_data[2]);
 
-		for (u8_t i = 0; i < 3; i++)
+		for (uint8_t i = 0; i < 3; i++)
 		{
 			send_message(uart_handle, &bme280_data[i], i);
 			k_sleep(K_MSEC(1000));

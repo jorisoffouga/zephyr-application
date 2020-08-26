@@ -10,9 +10,9 @@
 #define INDEXSTATUS 4
 
 
-size_t message_compose(u8_t **msgRaw, message_t *msg)
+size_t message_compose(uint8_t **msgRaw, message_t *msg)
 {
-	u8_t *rawMsg;
+	uint8_t *rawMsg;
 
 	rawMsg = k_malloc(msg->dataLen + MESSAGEMINSIZE);
 
@@ -23,15 +23,15 @@ size_t message_compose(u8_t **msgRaw, message_t *msg)
         memset(rawMsg, 0, msg->dataLen + MESSAGEMINSIZE);
     }
 
-	rawMsg[INDEXSTARTOFFRAME] = (u8_t) STARTOFFRAME;
-	rawMsg[INDEXSIZE] = (u8_t) msg->dataLen;
-	rawMsg[INDEXID]  = (u8_t) msg->id;
-	rawMsg[INDEXCMD] = (u8_t) msg->cmd;
-	rawMsg[INDEXSTATUS] = (u8_t) msg->status;
+	rawMsg[INDEXSTARTOFFRAME] = (uint8_t) STARTOFFRAME;
+	rawMsg[INDEXSIZE] = (uint8_t) msg->dataLen;
+	rawMsg[INDEXID]  = (uint8_t) msg->id;
+	rawMsg[INDEXCMD] = (uint8_t) msg->cmd;
+	rawMsg[INDEXSTATUS] = (uint8_t) msg->status;
 
 	if(msg->dataPtr != NULL && msg->dataLen != 0)
 	{
-		for (u8_t i = 0; i < msg->dataLen; ++i) {
+		for (uint8_t i = 0; i < msg->dataLen; ++i) {
 			rawMsg[INDEXDATA + i] = msg->dataPtr[i];
 		}
 	}
@@ -49,10 +49,10 @@ error:
 	return 0;
 }
 
-message_t *message_parse(u8_t *rawData)
+message_t *message_parse(uint8_t *rawData)
 {
     message_t *msg;
-	u8_t *temp;
+	uint8_t *temp;
 
 	if (rawData[INDEXSTARTOFFRAME] != STARTOFFRAME)
 		goto error;
@@ -62,7 +62,7 @@ message_t *message_parse(u8_t *rawData)
     if (msg == NULL)
         goto error;
 
-    msg->dataLen = (u8_t ) rawData[INDEXSIZE];
+    msg->dataLen = (uint8_t ) rawData[INDEXSIZE];
 	msg->id = (id_t) rawData[INDEXID];
 	msg->cmd =  (command_t) rawData[INDEXCMD];
 	msg->status = (message_status_t) rawData[INDEXSTATUS];
@@ -93,7 +93,7 @@ void message_init(message_t *msg)
 	}
 }
 
-message_t *message_alloc(u8_t size)
+message_t *message_alloc(uint8_t size)
 {
     message_t *msg;
 	size_t msgSize = size + sizeof(message_t);

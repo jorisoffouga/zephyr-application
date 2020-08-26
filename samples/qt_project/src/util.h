@@ -4,12 +4,12 @@
 #include <zephyr.h>
 #include <device.h>
 
-void gpio_pin_toggle(struct device *port, u32_t pin);
+void gpio_pin_toggle(struct device *port, uint32_t pin);
 
 struct fifo_data_t
 {
 	void *fifo_reserved;
-	u8_t *data;
+	uint8_t *data;
 };
 
 struct bridge_t
