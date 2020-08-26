@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.13.1)
 
-include(../../cmake/boilerplate.cmake)
-
-find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(Update)
 
 target_include_directories(app PRIVATE $ENV{ZEPHYR_BASE}/lib/updatehub/include)
