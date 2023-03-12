@@ -30,20 +30,6 @@ the rpmsg_tty.ko module on the target.
 
 Running the sample
 *******************
-
-Zephyr console
----------------
-
-Open a serial terminal (minicom, putty, etc.) and connect the board with the
-following settings:
-
-- Speed: 115200
-- Data: 8 bits
-- Parity: None
-- Stop bits: 1
-
-Reset the board.
-
 Linux console
 ---------------
 
@@ -52,6 +38,8 @@ Open a Linux shell (minicom, ssh, etc.) and insert a module into the Linux Kerne
 .. code-block:: console
 
    root@linuxshell: modprobe rpmsg_tty
+   root@linuxshell: echo -n zephyr_openamp_rsc_table.elf /sys/class/remoteproc/remoteproc0/firmware
+   root@linuxshell: echo start > /sys/class/remoteproc/remoteproc0/state # Start co-processor
 
 Result on Zephyr console
 -------------------------
@@ -60,9 +48,13 @@ The following message will appear on the corresponding Zephyr console:
 
 .. code-block:: console
 
-   ***** Booting Zephyr OS v#.##.#-####-g########## *****
-   Starting application thread!
+   root@linuxshell: tail -f /sys/kernel/debug/remoteproc/remoteproc0/trace0 # For zehpyr console
 
+.. code-block:: console
+
+   ***** Booting Zephyr OS v#.##.#-####-g########## *****
+
+   OpenAMP[remote] Linux responder demo started
    OpenAMP[remote] Linux tty responder started
 
 rpmsg TTY demo on Linux console
@@ -71,10 +63,22 @@ rpmsg TTY demo on Linux console
 On the Linux console send a message to Zephyr which answers with the "TTY <add>" prefix.
 <addr> corresponds to the Zephyr rpmsg-tty endpoint address:
 
+Led Management :
+Send json for enable/disable led
+
 .. code-block:: console
 
    $> cat /dev/ttyRPMSG0 &
    $> echo "{\"id\":\"led\",\"data\":0}" > /dev/ttyRPMSG0 # To disable LED
    $> echo "{\"id\":\"led\",\"data\":1}" > /dev/ttyRPMSG0 # To enable LED
    
-   tty: { "status": true}
+   tty: { "status": true}  # co-processor response when led gpio is properly use
+   tty: { "status": false} # co-processor response when led gpio isn't properly use or wrong json send
+
+Button Management :
+Press button :
+
+.. code-block:: console
+
+   $> cat /dev/ttyRPMSG0 &
+   tty: { "button": true}
