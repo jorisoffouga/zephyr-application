@@ -1,0 +1,21 @@
+/{
+	aliases {
+		i2c-1 = &i2c1;
+		i2c-3 = &i2c3;
+	}
+};
+
+&i2c1 {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	bme280@76 {
+		compatible = "bosch,bme280";
+		reg = <0x76>;
+		label = "BME280";
+	};
+};
+
+&i2c3 {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+};
