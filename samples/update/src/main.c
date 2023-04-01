@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zehphyr/kernel.h>
 #include <updatehub.h>
 #include <dfu/mcuboot.h>
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 #include <sys/printk.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 #if defined(CONFIG_UPDATEHUB_DTLS)
 #include <net/tls_credentials.h>

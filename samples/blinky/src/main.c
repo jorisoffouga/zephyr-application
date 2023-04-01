@@ -1,5 +1,5 @@
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 
 #define LED_PORT DT_ALIAS_LED0_GPIOS_CONTROLLER
 #define LED0 DT_ALIAS_LED0_GPIOS_PIN
