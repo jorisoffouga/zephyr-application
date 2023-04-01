@@ -1,8 +1,8 @@
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <sys/printk.h>
 #include <sys/util.h>
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 
 #define SW0_PORT DT_ALIAS_SW0_GPIOS_CONTROLLER
 #define SW0_PIN DT_ALIAS_SW0_GPIOS_PIN

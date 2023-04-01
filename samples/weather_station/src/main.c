@@ -1,7 +1,7 @@
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <drivers/uart.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/uart.h>
 
 #define UART_PORT "UART_2"
 

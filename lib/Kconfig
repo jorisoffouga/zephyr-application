@@ -1,0 +1,9 @@
+menu "Addtional Librairies"
+
+menuconfig CJSON
+	bool"Ultralightweight JSON parser in ANSI C" 
+	help
+	  cJSON aims to be the dumbest possible parser that you can get your
+	  job done with. It's a single file of C, and a single header file.
+
+endmenu

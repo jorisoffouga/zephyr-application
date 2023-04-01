@@ -1,8 +1,8 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 
 void gpio_pin_toggle(struct device *port, uint32_t pin);
 

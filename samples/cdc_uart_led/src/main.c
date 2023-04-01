@@ -1,8 +1,8 @@
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <stdio.h>
-#include <device.h>
-#include <drivers/gpio.h>
-#include <drivers/uart.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/uart.h>
 #include <sys/printk.h>
 #include <sys/__assert.h>
 #include <string.h>
