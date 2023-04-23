@@ -1,0 +1,46 @@
+/*
+ * Copyright (c) 2021, Laird Connectivity
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <nxp/nxp_imx8ml_m7.dtsi>
+#include "mimx8mp_debix-pinctrl.dtsi"
+
+/ {
+	model = "NXP i.MX8M Plus EVK board";
+	compatible = "nxp,mimx8mp_debix";
+
+	chosen {
+		/* TCM */
+		zephyr,flash = &itcm;
+		zephyr,sram = &dtcm;
+
+		/*
+		 * By default, Zephyr console and shell are assigned to
+		 * remoteproc. To enable console and shell over UART, uncomment
+		 * following lines and set the correct config in
+		 * stm32mp157c_dk2_defconfig "Serial Port" section in Zephyr
+		 * board documentation.
+		 * zephyr,console = &uart4;
+		 * zephyr,shell-uart = &uart4;
+		 */
+	};
+};
+
+&uart4 {
+	status = "disabled";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart4_default>;
+	pinctrl-names = "default";
+};
+
+&gpio3 {
+	status = "okay";
+};
+
+&mailbox0 {
+	status = "okay";
+};
