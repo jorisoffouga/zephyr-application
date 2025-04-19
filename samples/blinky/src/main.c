@@ -1,35 +1,41 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 
-#define LED_PORT DT_ALIAS_LED0_GPIOS_CONTROLLER
-#define LED0 DT_ALIAS_LED0_GPIOS_PIN
-#define LED1 DT_ALIAS_LED1_GPIOS_PIN
-#define LED2 DT_ALIAS_LED2_GPIOS_PIN
-#define LED3 DT_ALIAS_LED3_GPIOS_PIN
+
+/*
+ * A build error on this line means your board is unsupported.
+ * See the sample documentation for information on how to fix this.
+ */
+static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+static const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+static const struct gpio_dt_spec led2 = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
 
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME 1000
 
-void main(void)
+int main(void)
 {
-	int cnt = 0;
-	struct device *dev;
+	int ret;
 
-	dev = device_get_binding(LED_PORT);
+	if (!gpio_is_ready_dt(&led0)) {
+		return 0;
+	}
+	if (!gpio_is_ready_dt(&led1)) {
+		return 0;
+	}
+	if (!gpio_is_ready_dt(&led2)) {
+		return 0;
+	}
+
 	/* Set LED pin as output */
-	gpio_pin_configure(dev, LED0, GPIO_DIR_OUT);
-	gpio_pin_configure(dev, LED1, GPIO_DIR_OUT);
-	gpio_pin_configure(dev, LED2, GPIO_DIR_OUT);
-	gpio_pin_configure(dev, LED3, GPIO_DIR_OUT);
+	ret = gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+	// ret = gpio_pin_configure_dt(&led1, GPIO_OUTPUT_ACTIVE);
+	// ret = gpio_pin_configure_dt(&led2, GPIO_OUTPUT_ACTIVE);
 
 	while (1)
 	{
 		/* Set pin to HIGH/LOW every 1 second */
-		gpio_pin_write(dev, LED0, cnt % 2);
-		gpio_pin_write(dev, LED1, cnt % 2);
-		gpio_pin_write(dev, LED2, cnt % 2);
-		gpio_pin_write(dev, LED3, cnt % 2);
-		cnt++;
-		k_sleep(Z_TIMEOUT_TICKS(SLEEP_TIME));
+		gpio_pin_toggle_dt(&led0);
+		k_sleep(K_MSEC(SLEEP_TIME));
 	}
 }

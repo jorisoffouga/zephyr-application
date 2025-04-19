@@ -1,101 +1,53 @@
 #include <zephyr/kernel.h>
-#include <sys/printk.h>
-#include <sys/util.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 
-#define SW0_PORT DT_ALIAS_SW0_GPIOS_CONTROLLER
-#define SW0_PIN DT_ALIAS_SW0_GPIOS_PIN
 
-#define LED0 DT_ALIAS_LED0_GPIOS_PIN
-#define LED_PORT DT_ALIAS_LED0_GPIOS_CONTROLLER
-
-/* change to use another GPIO pin interrupt config */
-#ifdef DT_ALIAS_SW0_GPIOS_FLAGS
-#define EDGE    (DT_ALIAS_SW0_GPIOS_FLAGS | GPIO_INT_EDGE)
-#else
-/*
- * If DT_ALIAS_SW0_GPIOS_FLAGS not defined used default EDGE value.
- * Change this to use a different interrupt trigger
- */
-#define EDGE    (GPIO_INT_EDGE | GPIO_INT_ACTIVE_LOW)
-#endif
-
-/* change this to enable pull-up/pull-down */
-#ifndef DT_ALIAS_SW0_GPIOS_FLAGS
-#ifdef DT_ALIAS_SW0_GPIOS_PIN_PUD
-#define DT_ALIAS_SW0_GPIOS_FLAGS DT_ALIAS_SW0_GPIOS_PIN_PUD
-#else
-#define DT_ALIAS_SW0_GPIOS_FLAGS 0
-#endif
-#endif
-#define PULL_UP DT_ALIAS_SW0_GPIOS_FLAGS
-
+static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+static const struct gpio_dt_spec sw0 = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 static struct gpio_callback gpio_cb;
-static struct device *led;
 
-void gpio_callback(struct device *port,
+void gpio_callback(const struct device *port,
                    struct gpio_callback *cb, uint32_t pins)
 {
     int ret;
 
     printk("Button pressed at %d\n", k_cycle_get_32());
 
-    ret = gpio_pin_toggle(led, LED0);
+    ret = gpio_pin_toggle_dt(&led0);
 
     if (ret)
     {
-        printk("Error set " LED_PORT "%d!\n", LED0);
+        printk("Error set %d!\n", led0.pin);
     }
 }
 
-void main(void)
+int main(void)
 {
     int ret;
-    struct device *button_dev;
 
-    button_dev = device_get_binding(SW0_PORT);
-
-    if (!button_dev)
+    if(!gpio_is_ready_dt(&led0))
     {
-        printk("Cannot find %s!\n", SW0_PORT);
-        return;
+        return 0;
+    }
+    if(!gpio_is_ready_dt(&sw0))
+    {
+        return 0;
     }
 
-	led = device_get_binding(LED_PORT);
+    gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+    gpio_pin_interrupt_configure_dt(&sw0, GPIO_INT_EDGE_TO_ACTIVE);
 
-	if(!led){
-		printk("Cannot find %s!\n", SW0_PORT);
-        return;
-	}
+    gpio_init_callback(&gpio_cb, gpio_callback, BIT(sw0.pin));
 
-    ret = gpio_pin_configure(led, LED0, (GPIO_DIR_OUT));
-
-    if (ret)
-    {
-        printk("Error configuring " LED_PORT "%d!\n", LED0);
-    }
-
-    ret = gpio_pin_configure(button_dev, SW0_PIN, GPIO_DIR_IN | GPIO_INT | PULL_UP | EDGE);
-    if (ret)
-    {
-        printk("Error configuring " SW0_PORT "%d!\n", SW0_PIN);
-    }
-
-    gpio_init_callback(&gpio_cb, gpio_callback, BIT(SW0_PIN));
-
-    ret = gpio_add_callback(button_dev, &gpio_cb);
+    ret = gpio_add_callback(sw0.port, &gpio_cb);
 
     if (ret)
     {
         printk("Cannot setup callback!\n");
-    }
-
-    ret = gpio_pin_enable_callback(button_dev, SW0_PIN);
-
-    if (ret)
-    {
-        printk("Error enabling callback!\n");
+        return 0;
     }
 
     printk("Started Simple Application Zephyr\n");
