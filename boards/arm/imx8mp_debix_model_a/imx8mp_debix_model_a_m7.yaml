@@ -1,15 +1,15 @@
 #
-# Copyright (c) 2021, Laird Connectivity
+# Copyright (c) 2026, Joris Offouga
 #
 # SPDX-License-Identifier: Apache-2.0
 #
 
-identifier: mimx8mp_debix_ddr
-name: NXP i.MX8M Plus DEBIX (DDR)
+identifier: imx8mp_debix_model_a_m7
+name: NXP i.MX8M Plus DEBIX (ITCM)
 type: mcu
 arch: arm
-ram: 2048
-flash: 2048
+ram: 128
+flash: 128
 toolchain:
   - zephyr
   - gnuarmemb

@@ -25,16 +25,13 @@
 
 LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_DBG);
 
-/*
- * Get button configuration from the devicetree sw0 alias. This is mandatory.
- */
+/* Button reporting is optional on boards without a user button. */
+#if DT_NODE_HAS_STATUS(DT_ALIAS(sw0), okay)
 #define SW0_NODE	DT_ALIAS(sw0)
-#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
-#error "Unsupported board: sw0 devicetree alias is not defined"
-#endif
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
 							      {0});
 static struct gpio_callback button_cb_data;
+#endif
 
 /*
  * The led0 devicetree alias is optional. If present, we'll use it
@@ -101,6 +98,7 @@ static struct rpmsg_rcv_msg tty_msg;
 static K_SEM_DEFINE(data_sem, 0, 1);
 static K_SEM_DEFINE(data_tty_sem, 0, 1);
 
+#if DT_NODE_HAS_STATUS(DT_ALIAS(sw0), okay)
 void button_pressed(const struct device *dev, struct gpio_callback *cb,
 		    uint32_t pins)
 {
@@ -118,6 +116,7 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 	}
 	cJSON_Delete(json_response);
 }
+#endif
 
 static void platform_ipm_callback(const struct device *dev, void *context,
 				  uint32_t id, volatile void *data)
@@ -409,6 +408,7 @@ void main(void)
 {
 	int ret;
 
+	#if DT_NODE_HAS_STATUS(DT_ALIAS(sw0), okay)
 	if (!device_is_ready(button.port)) {
 		printk("Error: button device %s is not ready\n",
 		       button.port->name);
@@ -433,6 +433,7 @@ void main(void)
 	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
+	#endif
 
 	if (led.port && !device_is_ready(led.port)) {
 		printk("Error %d: LED device %s is not ready; ignoring it\n",

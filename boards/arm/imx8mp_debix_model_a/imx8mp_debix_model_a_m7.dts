@@ -1,19 +1,24 @@
 /*
- * Copyright (c) 2021, Laird Connectivity
+ * Copyright (c) 2026, Joris Offouga
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
-#include <nxp/nxp_imx8ml_m7.dtsi>
-#include "mimx8mp_debix-pinctrl.dtsi"
+#include <nxp/imx/nxp_imx8ml_m7.dtsi>
+#include "imx8mp_debix_model_a-pinctrl.dtsi"
 
 / {
-	model = "NXP i.MX8M Plus EVK board";
+	model = "NXP i.MX8M Plus Debix Model A board";
 	compatible = "nxp,mimx8mp_debix";
 
 	chosen {
+		/* TCM */
+		zephyr,flash = &itcm;
+		zephyr,sram = &dtcm;
+		zephyr,ipc_shm = &rpmsg_shm;
+
 		/*
 		 * By default, Zephyr console and shell are assigned to
 		 * remoteproc. To enable console and shell over UART, uncomment
@@ -23,10 +28,12 @@
 		 * zephyr,console = &uart4;
 		 * zephyr,shell-uart = &uart4;
 		 */
-		/* DDR */
+	};
 
-		zephyr,flash = &ddr_code;
-		zephyr,sram = &ddr_sys;
+	rpmsg_shm: memory@55400000 {
+		compatible = "zephyr,memory-region";
+		zephyr,memory-region = "RPMSG_SHM";
+		reg = <0x55400000 0x100000>;
 	};
 };
 

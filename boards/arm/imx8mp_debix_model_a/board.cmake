@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, Laird Connectivity
+# Copyright (c) 2026, Joris Offouga
 #
 # SPDX-License-Identifier: Apache-2.0
 #

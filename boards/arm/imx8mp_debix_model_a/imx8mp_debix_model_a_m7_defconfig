@@ -1,12 +1,9 @@
 #
-# Copyright (c) 2021, Laird Connectivity
+# Copyright (c) 2026, Joris Offouga
 #
 # SPDX-License-Identifier: Apache-2.0
 #
 
-CONFIG_SOC_SERIES_IMX8ML_M7=y
-CONFIG_SOC_MIMX8ML8=y
-CONFIG_BOARD_MIMX8MP_DEBIX=y
 CONFIG_CLOCK_CONTROL=y
 CONFIG_UART_CONSOLE=y
 CONFIG_SERIAL=y
@@ -18,5 +15,5 @@ CONFIG_RAM_CONSOLE_BUFFER_SIZE=1024
 # uart console (overrides remote proc console)
 CONFIG_UART_CONSOLE=n
 CONFIG_XIP=y
-CONFIG_CODE_DDR=y
+CONFIG_CODE_ITCM=y
 CONFIG_PINCTRL=y

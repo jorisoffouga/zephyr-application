@@ -1,12 +1,12 @@
-# MIMX8MP EVK board defconfig
+# i.MX8MP Debix Model A board defconfig
 
 # Copyright (c) 2021, Laird Connectivity
 # SPDX-License-Identifier: Apache-2.0
 
-if BOARD_MIMX8MP_DEBIX
+if BOARD_IMX8MP_DEBIX_MODEL_A
 
 config BOARD
-	default "mimx8mp_debix"
+	default "imx8mp_debix_model_a"
 
 if !XIP
 config FLASH_SIZE
@@ -15,4 +15,4 @@ config FLASH_BASE_ADDRESS
 	default 0
 endif
 
-endif # BOARD_MIMX8MP_EVK
+endif # BOARD_IMX8MP_DEBIX_MODEL_A
