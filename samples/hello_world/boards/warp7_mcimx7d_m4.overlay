@@ -1,0 +1,24 @@
+/*
+ * Started by Linux remoteproc (imx_rproc), which only releases the M4 reset:
+ * the vector table must be at address 0, OCRAM_S seen from the M4 code bus.
+ * Data goes to the TCMU: ocram_s_sys is the same 32 KiB of OCRAM_S through
+ * the system bus, so data there would overwrite the code.
+ */
+/ {
+	chosen {
+		zephyr,flash = &ocram_s_code;
+		zephyr,sram = &tcmu_sys;
+	};
+};
+
+&user_switch_1 {
+    status = "disabled";
+};
+
+&gpio7 {
+    status = "disabled";
+};
+
+&i2c4 {
+    status = "disabled";
+};

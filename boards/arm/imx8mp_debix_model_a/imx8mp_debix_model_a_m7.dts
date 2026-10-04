@@ -45,7 +45,7 @@
 };
 
 &gpio3 {
-	status = "okay";
+	status = "disabled";
 };
 
 &mailbox0 {

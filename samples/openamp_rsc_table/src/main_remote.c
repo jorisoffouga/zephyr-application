@@ -37,8 +37,10 @@ static struct gpio_callback button_cb_data;
  * The led0 devicetree alias is optional. If present, we'll use it
  * to turn on the LED whenever the button is pressed.
  */
+#if DT_NODE_HAS_STATUS(DT_ALIAS(led0), okay)
 static struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(DT_ALIAS(led0), gpios,
 						     {0});
+#endif
 
 #define SHM_DEVICE_NAME	"shm"
 
@@ -62,7 +64,8 @@ K_THREAD_STACK_DEFINE(thread_tty_stack, APP_TTY_TASK_STACK_SIZE);
 static struct k_thread thread_mng_data;
 static struct k_thread thread_tty_data;
 
-static const struct device *ipm_handle;
+static const struct device *const ipm_handle =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc));
 
 static metal_phys_addr_t shm_physmap = SHM_START_ADDR;
 
@@ -158,7 +161,8 @@ int mailbox_notify(void *priv, uint32_t id)
 	ARG_UNUSED(priv);
 
 	LOG_DBG("%s: msg received\n", __func__);
-	ipm_send(ipm_handle, 0, id, NULL, 0);
+	/* MU register id = vring id, as Linux imx_rproc expects */
+	ipm_send(ipm_handle, 0, id, &id, sizeof(id));
 
 	return 0;
 }
@@ -333,6 +337,7 @@ void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
 					{
 						if(cJSON_IsNumber(data))
 						{
+#if DT_NODE_HAS_STATUS(DT_ALIAS(led0), okay)
 							if(led.port)
 							{
 								gpio_pin_set_dt(&led, data->valueint);
@@ -341,6 +346,7 @@ void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
 						}
 					}
 				}
+#endif
 				cJSON_Delete(json_data);
 			}
 			cJSON *json_response = cJSON_CreateObject();
@@ -408,7 +414,7 @@ void main(void)
 {
 	int ret;
 
-	#if DT_NODE_HAS_STATUS(DT_ALIAS(sw0), okay)
+#if DT_NODE_HAS_STATUS(DT_ALIAS(sw0), okay)
 	if (!device_is_ready(button.port)) {
 		printk("Error: button device %s is not ready\n",
 		       button.port->name);
@@ -433,8 +439,9 @@ void main(void)
 	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
-	#endif
+#endif
 
+#if DT_NODE_HAS_STATUS(DT_ALIAS(led0), okay)
 	if (led.port && !device_is_ready(led.port)) {
 		printk("Error %d: LED device %s is not ready; ignoring it\n",
 		       ret, led.port->name);
@@ -452,11 +459,13 @@ void main(void)
 		}
 	}
 
+#endif
 	k_thread_create(&thread_mng_data, thread_mng_stack, APP_TASK_STACK_SIZE,
 			(k_thread_entry_t)rpmsg_mng_task,
 			NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
 
 	k_thread_create(&thread_tty_data, thread_tty_stack, APP_TTY_TASK_STACK_SIZE,
+			(k_thread_entry_t)app_rpmsg_tty,
 			(k_thread_entry_t)app_rpmsg_tty,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 }

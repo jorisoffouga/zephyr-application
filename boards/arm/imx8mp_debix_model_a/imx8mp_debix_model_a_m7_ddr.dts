@@ -27,6 +27,13 @@
 
 		zephyr,flash = &ddr_code;
 		zephyr,sram = &ddr_sys;
+		zephyr,ipc_shm = &rpmsg_shm;
+	};
+
+	rpmsg_shm: memory@55400000 {
+		compatible = "zephyr,memory-region";
+		zephyr,memory-region = "RPMSG_SHM";
+		reg = <0x55400000 0x100000>;
 	};
 };
 

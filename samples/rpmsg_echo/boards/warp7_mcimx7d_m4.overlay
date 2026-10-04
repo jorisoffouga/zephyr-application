@@ -1,0 +1,42 @@
+/*
+ * WaRP7 Cortex-M4 started by Linux remoteproc (imx_rproc), RPMsg with Linux
+ * over the MU. Must match the Linux DT (bdx-iot-external
+ * board/warp7/linux/dts/nxp/imx/imx7s-warp-optee-m4.dts):
+ * - code in OCRAM (128 KiB, reserved for the M4 in Linux); the vector table
+ *   is relocated to address 0, OCRAM_S (CONFIG_ROMSTART_RELOCATION_ROM),
+ *   since imx_rproc only releases the M4 reset;
+ * - data in the TCMU (board default);
+ * - RPMsg buffers and vrings in DDR, 0x9de00000 - 0x9df10000 (Linux
+ *   vdev0buffer, vdev0vring0, vdev0vring1), below OP-TEE;
+ * - MU side B; Linux uses side A, channel 0.
+ */
+/ {
+	chosen {
+		zephyr,flash = &ocram_code;
+		zephyr,ipc_shm = &ddr_shm;
+		zephyr,ipc = &mub;
+	};
+
+	ddr_shm: memory1@9de00000 {
+		compatible = "mmio-sram";
+		reg = <0x9de00000 0x110000>;
+		status = "okay";
+	};
+};
+
+&mub {
+	status = "okay";
+};
+
+&user_switch_1 {
+	status = "disabled";
+};
+
+/* GPIO7 and I2C4 belong to Linux (MCP2515 interrupt, MCP23008 reset) */
+&gpio7 {
+	status = "disabled";
+};
+
+&i2c4 {
+	status = "disabled";
+};
