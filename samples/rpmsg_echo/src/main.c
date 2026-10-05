@@ -45,12 +45,18 @@ static void ipm_callback(const struct device *dev, void *context, uint32_t id,
 	k_sem_give(&kick_sem);
 }
 
-/* Kick Linux: MU register id = vring id, as imx_rproc expects */
+/*
+ * Kick Linux. imx_rproc listens on one MU register (its "rx" channel) and
+ * then processes every vring, so kick on that register when it is set.
+ */
 static int mailbox_notify(void *priv, uint32_t id)
 {
+	uint32_t reg = CONFIG_RPMSG_ECHO_MU_KICK_ID >= 0 ?
+		       CONFIG_RPMSG_ECHO_MU_KICK_ID : id;
+
 	ARG_UNUSED(priv);
 
-	return ipm_send(ipm, 0, id, &id, sizeof(id));
+	return ipm_send(ipm, 0, reg, &id, sizeof(id));
 }
 
 static int echo_cb(struct rpmsg_endpoint *ep, void *data, size_t len,

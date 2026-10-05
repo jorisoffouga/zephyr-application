@@ -1,0 +1,18 @@
+/*
+ * Debix Model A Cortex-M7 (TCM) started by Linux remoteproc. Must match the
+ * Linux DT (bdx-iot-external
+ * board/debix-model-a/linux/dts/freescale/imx8mp-debix-model-a.dts):
+ * vrings at 0x55000000/0x55008000 and buffers at 0x55400000 (1 MiB), below
+ * OP-TEE (0x56000000); MU channel 1. Console on UART3 (board default).
+ */
+/ {
+	chosen {
+		zephyr,ipc_shm = &ipc_shm;
+		zephyr,ipc = &mailbox0;
+	};
+
+	ipc_shm: memory@55000000 {
+		compatible = "mmio-sram";
+		reg = <0x55000000 0x500000>;
+	};
+};

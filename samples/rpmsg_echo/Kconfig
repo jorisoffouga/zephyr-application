@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config RPMSG_ECHO_MU_KICK_ID
+	int "MU register used to kick the host"
+	default -1
+	help
+	  MU data register the host listens on: with Linux imx_rproc, the
+	  index of its "rx" mbox channel (mboxes = <&mu 1 N>). On a kick,
+	  imx_rproc processes every vring, so all kicks go to that register.
+	  -1 kicks on the register numbered like the vring, as Zephyr's
+	  openamp_rsc_table sample does.
+
+source "Kconfig.zephyr"
