@@ -15,4 +15,9 @@ config FLASH_BASE_ADDRESS
 	default 0
 endif
 
+# RAM console read by Linux remoteproc (trace0): needs a resource table with
+# its trace entry, as on STM32MP1. RPMsg apps set their own number of buffers.
+config OPENAMP_RSC_TABLE
+	default y if RAM_CONSOLE
+
 endif # BOARD_IMX8MP_DEBIX_MODEL_A
