@@ -14,15 +14,9 @@
 	compatible = "nxp,mimx8mp_debix";
 
 	chosen {
-		/*
-		 * By default, Zephyr console and shell are assigned to
-		 * remoteproc. To enable console and shell over UART, uncomment
-		 * following lines and set the correct config in
-		 * stm32mp157c_dk2_defconfig "Serial Port" section in Zephyr
-		 * board documentation.
-		 * zephyr,console = &uart4;
-		 * zephyr,shell-uart = &uart4;
-		 */
+		/* UART3 (UART3_RXD/UART3_TXD pads), disabled in the Linux DT */
+		zephyr,console = &uart3;
+		zephyr,shell-uart = &uart3;
 		/* DDR */
 
 		zephyr,flash = &ddr_code;
@@ -37,15 +31,28 @@
 	};
 };
 
-&uart4 {
-	status = "disabled";
+/ {
+	soc {
+		/* Not in nxp_imx8ml_m7.dtsi; same as nxp_imx8m_m4.dtsi */
+		uart3: uart@30880000 {
+			compatible = "nxp,imx-iuart";
+			reg = <0x30880000 0x10000>;
+			interrupts = <28 3>;
+			clocks = <&ccm IMX_CCM_UART3_CLK 0x68 12>;
+			status = "disabled";
+		};
+	};
+};
+
+&uart3 {
+	status = "okay";
 	current-speed = <115200>;
-	pinctrl-0 = <&uart4_default>;
+	pinctrl-0 = <&uart3_default>;
 	pinctrl-names = "default";
 };
 
 &gpio3 {
-	status = "okay";
+	status = "disabled";
 };
 
 &mailbox0 {
