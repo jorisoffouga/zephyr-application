@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config ADC_PCF8591
+	bool "NXP PCF8591 ADC"
+	default y
+	depends on DT_HAS_NXP_PCF8591_ADC_ENABLED
+	depends on ADC
+	select MFD
+	help
+	  Enable the four 8-bit single-ended analog inputs of the NXP
+	  PCF8591.
+
+config ADC_PCF8591_INIT_PRIORITY
+	int "NXP PCF8591 ADC init priority"
+	default 80
+	depends on ADC_PCF8591
+	help
+	  After the PCF8591 MFD (MFD_PCF8591_INIT_PRIORITY).

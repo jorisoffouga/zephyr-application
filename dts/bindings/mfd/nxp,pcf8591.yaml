@@ -1,0 +1,37 @@
+# Copyright (c) 2026, Joris Offouga
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  NXP PCF8591 8-bit A/D and D/A converter on I2C: four analog inputs
+  (child "nxp,pcf8591-adc") and one analog output (child
+  "nxp,pcf8591-dac").
+
+  Example:
+
+    pcf8591@48 {
+      compatible = "nxp,pcf8591";
+      reg = <0x48>;
+      vref-mv = <3300>;
+
+      pcf8591_adc: adc {
+        compatible = "nxp,pcf8591-adc";
+        #io-channel-cells = <1>;
+      };
+
+      pcf8591_dac: dac {
+        compatible = "nxp,pcf8591-dac";
+        #io-channel-cells = <1>;
+      };
+    };
+
+compatible: "nxp,pcf8591"
+
+include: i2c-device.yaml
+
+properties:
+  vref-mv:
+    type: int
+    default: 3300
+    description: |
+      Voltage on the VREF pin, in millivolts: full scale of the inputs
+      and of the output (AGND to VREF).

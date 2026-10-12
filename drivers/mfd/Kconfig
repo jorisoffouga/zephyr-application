@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config MFD_PCF8591
+	bool "NXP PCF8591 8-bit A/D and D/A converter"
+	default y
+	depends on DT_HAS_NXP_PCF8591_ENABLED
+	depends on MFD
+	select I2C
+	help
+	  Enable the NXP PCF8591 multi-function device driver: four 8-bit
+	  analog inputs (ADC_PCF8591) and one 8-bit analog output
+	  (DAC_PCF8591) on I2C.
+
+config MFD_PCF8591_INIT_PRIORITY
+	int "NXP PCF8591 init priority"
+	default 75
+	depends on MFD_PCF8591
+	help
+	  After the I2C bus, before the PCF8591 ADC and DAC
+	  (ADC_PCF8591_INIT_PRIORITY, DAC_PCF8591_INIT_PRIORITY).
