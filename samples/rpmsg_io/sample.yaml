@@ -1,0 +1,10 @@
+sample:
+  description: m4io service, Linux controls the M4 IO devices over RPMsg
+  name: rpmsg io
+common:
+  tags: ipc openamp
+  harness: console
+  extra_args: SNIPPET=warp7-io-board
+tests:
+  sample.ipc.rpmsg_io:
+    platform_allow: warp7/mcimx7d/m4
