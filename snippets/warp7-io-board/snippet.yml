@@ -1,0 +1,6 @@
+name: warp7-io-board
+boards:
+  warp7/mcimx7d/m4:
+    append:
+      EXTRA_DTC_OVERLAY_FILE: warp7-io-board.overlay
+      EXTRA_CONF_FILE: warp7-io-board.conf
