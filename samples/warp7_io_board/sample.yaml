@@ -1,0 +1,10 @@
+sample:
+  description: WaRP7 IO board devices (I2C3) driven by the Cortex-M4
+  name: warp7 io board
+common:
+  tags: i2c sensor gpio eeprom counter
+  harness: console
+  extra_args: SNIPPET=warp7-io-board
+tests:
+  sample.warp7_io_board:
+    platform_allow: warp7/mcimx7d/m4
