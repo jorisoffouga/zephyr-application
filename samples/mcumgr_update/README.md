@@ -155,6 +155,25 @@ $S/mkswu.sh $B-v1/mcumgr_update/zephyr/zephyr.signed.bin  v1.swu  $UART  host  1
 
 The `.swu` files are specific to a board: the images are built for it.
 
+### Both boards in one .swu
+
+With the two boards connected, `swupdate/sw-description-two-boards`
+updates them from a single `.swu`: one `mcumgr` image per board, each on
+its own UART. Both builds name their image `zephyr.signed.bin`, so the
+wrapper copies them as `frdm_k64f.signed.bin` and
+`stm32f4_disco.signed.bin`:
+
+```sh
+#                     <frdm_k64f image>                                     <stm32f4_disco image>                                     <swu>         <k64f uart>  <f4 uart>    <confirm> <version>
+$S/mkswu-two-boards.sh build-frdm_k64f-v2/mcumgr_update/zephyr/zephyr.signed.bin build-stm32f4_disco-v2/mcumgr_update/zephyr/zephyr.signed.bin both-v2.swu /dev/ttyACM0 /dev/ttyUSB0 mcu 2.0.0
+../swupdate/build-host/swupdate -v -i both-v2.swu
+```
+
+The images are installed one after the other (frdm_k64f first). Each MCU
+rolls back on its own, but there is no transaction across the two: if the
+stm32f4_disco update fails, SWUpdate reports an error and the frdm_k64f
+keeps its new image.
+
 To sign the `.swu` (the host SWUpdate then needs `CONFIG_SIGNED_IMAGES`), add
 for example `-k RSA,priv.pem` before `create`.
 

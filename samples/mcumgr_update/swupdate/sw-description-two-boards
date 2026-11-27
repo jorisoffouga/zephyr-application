@@ -1,0 +1,40 @@
+software =
+{
+	version = "@@VERSION@@";
+	description = "frdm_k64f + stm32f4_disco MCU update over MCUmgr/SMP";
+
+	/*
+	 * Images are installed one after the other, in this order. Each MCU
+	 * rolls back on its own (MCUboot), there is no transaction across
+	 * the two MCUs: if the second update fails, the first MCU keeps its
+	 * new image.
+	 */
+	images: (
+		{
+			/* sha256 added by swugenerator */
+			filename = "frdm_k64f.signed.bin";
+			type = "mcumgr";
+			device = "@@K64F_DEVICE@@";
+			properties: {
+				baudrate = "115200";
+				chunk-size = "128";
+				confirm = "@@CONFIRM@@";
+				confirm-timeout-ms = "15000";
+				boot-timeout-ms = "60000";
+			};
+		},
+		{
+			filename = "stm32f4_disco.signed.bin";
+			type = "mcumgr";
+			device = "@@F4_DEVICE@@";
+			properties: {
+				baudrate = "115200";
+				chunk-size = "128";
+				confirm = "@@CONFIRM@@";
+				confirm-timeout-ms = "15000";
+				/* swap using scratch: 128 KiB sector erases */
+				boot-timeout-ms = "120000";
+			};
+		}
+	);
+}
