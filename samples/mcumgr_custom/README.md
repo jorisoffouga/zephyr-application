@@ -10,11 +10,13 @@ Discovery Shield. One UART carries MCUmgr SMP for:
   * 64 `led`: the 22 LEDs (board, MCP23S08 expander, bargraph) on, off,
     blinking, and the application version;
   * 65 `bargraph`: BarGraph click level / mask / PWM brightness;
-  * 66 `airq`: Air Quality 3 click eCO2 and TVOC;
+  * 66 `airq`: Air Quality 3 click eCO2 and TVOC (built only when its
+    devicetree node is enabled);
   * 67 `pattern`: LED patterns run by the firmware (K2000 scanner,
-    chase, fill, alternate, counter) on any LED bank.
+    chase, fill, alternate, counter) on any LED bank;
+  * 68 `alcohol`: Alcohol click (MQ-3) voltage and clean air baseline.
 
-To add a feature, add a group (next ID: 68) or a command to an
+To add a feature, add a group (next ID: 69) or a command to an
 existing group. See "Adding a group or a command" below.
 
 ```
@@ -26,8 +28,9 @@ existing group. See "Adding a group or a command" below.
  │ swupdate (mcumgr handler)    │             │  ├ group 64 led       ── board LEDs  │
  └──────────────────────────────┘             │  │                    ── SPI2 MCP23S08 (mikroBUS 2)
                                               │  ├ group 65 bargraph  ── SPI3 74HC595 + TIM3 PWM (mikroBUS 3)
-                                              │  ├ group 66 airq      ── I2C1 CCS811 (mikroBUS 1)
-                                              │  └ group 67 pattern   ── LED patterns, any bank
+                                              │  ├ group 66 airq      ── I2C1 CCS811 (mikroBUS 1, off)
+                                              │  ├ group 67 pattern   ── LED patterns, any bank
+                                              │  └ group 68 alcohol   ── ADC1 IN11 MQ-3 (mikroBUS 1)
                                               │ MCUboot: slot0 / slot1 / scratch     │
                                               └──────────────────────────────────────┘
 ```
@@ -56,13 +59,26 @@ an upload in progress: requests are handled one at a time.
 
 | mikroBUS | click board                    | bus                          | other pins |
 |----------|--------------------------------|------------------------------|------------|
-| 1        | Air Quality 3 (CCS811)         | I2C1 PB8 SCL / PB7 SDA, 0x5a | RST PE10, WAKE = CS PB12, INT PE7 |
+| 1        | Alcohol click (MIKROE-1586, MQ-3) | analog: AN PC1 = ADC1 IN11 | 5 V heater |
+| 1 (other choice) | Air Quality 3 (CCS811), node disabled | I2C1 PB8 SCL / PB7 SDA, 0x5a | RST PE10, WAKE = CS PB12, INT PE7 |
 | 2        | MCP23S08 expander, 8 LEDs active low | SPI2 PB13/14/15, CS PE14 | (RST PE12, INT PE8 not used) |
 | 3        | BarGraph click (MIKROE-1423)   | SPI3 PB3/4/5, CS PE5 = latch | RST PE4 = /MR, PWM PB1 TIM3_CH4 = enable|
 
 The full mikroBUS pinout of the shield, from its schematic, is in
 `boards/stm32f4_disco.overlay`. Notes:
 
+* mikroBUS 1 holds one click. The overlay has both: the Alcohol click
+  (`zephyr,user` `io-channels`, `&adc1`) and the Air Quality 3 click
+  (`ccs811` node, `status = "disabled"`). Each group is built only when
+  its devicetree part is there. To go back to the Air Quality 3: set the
+  ccs811 node `okay` and remove the `zephyr,user` `io-channels`.
+* **Alcohol click voltage:** it runs on 5 V and its AN output can rise
+  above 3.3 V at high concentration, more than the STM32 ADC pin takes
+  (PC1 is not 5 V tolerant in analog mode). Measure AN with a meter
+  while breathing alcohol (e.g. hand sanitizer) near the sensor; if it
+  goes above 3.3 V, turn the click's potentiometer (load resistor) down
+  or add a divider. The `alcohol` group reports `saturated` when AN is at
+  the ADC full scale.
 * The shield puts I2C1 on PB8/PB7. The Discovery uses PB6/PB9 for its
   CS43L22 audio codec, which the overlay disables.
 * The MCP23S08 is addressed with A1/A0 = 0 (the Zephyr driver sends
@@ -171,6 +187,31 @@ driver (one measurement per second).
   | `hw_id` ≠ 0x81 | not a CCS811 at this address |
   | `status` bit 4 (APP_VALID) = 0 | the CCS811 has no application firmware |
 
+## The alcohol protocol (group 68)
+
+`include/alcohol_mgmt.h`, `src/alcohol_mgmt.c`: Alcohol click (MQ-3)
+analog output on mikroBUS 1 AN, read with the ADC (average of
+`CONFIG_APP_ALCOHOL_SAMPLES` = 16 samples, longest sampling time).
+
+| op    | command     | request | response |
+|-------|-------------|---------|----------|
+| read  | 0 `measure` | `{}`    | `{"raw": 812, "mv": 654, "full_mv": 3300, "saturated": false, "warming": false, "baseline_mv": 610, "delta_mv": 44}` |
+| write | 0 `measure` | `{"calibrate": true}` | same: the voltage now becomes the baseline |
+| write | 0 `measure` | `{"baseline_mv": 610}` / `{"baseline_mv": 0}` | same: baseline set / removed |
+
+* The voltage rises with the alcohol concentration. `delta_mv` (only
+  with a baseline) is the signal above clean air: calibrate in clean
+  air, after the warm-up. The baseline is in RAM (lost at reset).
+* `warming`: less than `CONFIG_APP_ALCOHOL_WARMUP_S` (180 s) since boot.
+  The heater is powered as long as the board is: after an MCU reset the
+  sensor is already warm. A new MQ-3 needs about 24 h of burn-in.
+* `saturated`: AN at the ADC full scale (see the voltage note under
+  "Click boards").
+* No ppm: that needs the load resistor value and a calibration with a
+  known concentration. The web UI shows rough levels of `delta_mv`.
+* Errors: 2 `NO_DEVICE` (ADC not ready or channel setup failed), 3 `IO`,
+  4 `INVALID` (`baseline_mv` above the full scale).
+
 ## The pattern protocol (group 67)
 
 `include/pattern.h` (engine), `src/pattern.c`, `include/pattern_mgmt.h`,
@@ -213,7 +254,7 @@ The SMP UART carries only SMP frames, so the logs go to a second port:
 USB CDC ACM on the Discovery micro-USB OTG connector (`zephyr,console` in
 the overlay, `CONFIG_USB_DEVICE_STACK_NEXT` +
 `CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT` in `prj.conf`). Modules `app`,
-`led_ctrl`, `bargraph`, `airq`, `pattern` log at the level chosen with
+`led_ctrl`, `bargraph`, `airq`, `alcohol`, `pattern` log at the level chosen with
 `CONFIG_APP_LOG_LEVEL_INF=y` (info: boot, image confirmation, missing
 click boards, LED and bargraph changes) or `CONFIG_APP_LOG_LEVEL_DBG=y`
 (debug: also each air quality read).
@@ -263,8 +304,14 @@ python $APP/scripts/web_ui.py --poll 0.5    # read the board twice a second
   active low), all on / all off / invert.
 * **BarGraph**: click a segment to toggle it, level and brightness
   sliders, the level (or "custom" for a non-contiguous mask).
+* **Alcohol**: AN voltage with its position on the ADC scale and the
+  last minutes, the signal above the clean air baseline with a rough
+  level, warm-up and saturation state; **Calibrate (clean air)** and
+  **Clear baseline**.
 * **Air Quality 3**: eCO2 and TVOC with quality bands and the last
   5 minutes.
+* The page shows only the cards of the groups in the firmware: the
+  server sees which groups answer `ENOTSUP`.
 * **Zephyr log**: live, colored by level, filter, pause; reconnects
   after each MCU reset. The port is chosen in the panel: **auto** (the
   firmware USB CDC ACM, found by its VID / product string) or any serial
@@ -289,13 +336,13 @@ python $APP/scripts/web_ui.py --poll 0.5    # read the board twice a second
   second and would only show random frames.
 
 While a page is open the server reads the board every `--poll` seconds
-(default 1: one `led get`, one `bargraph`, `airq` and `pattern` read) and
+(default 1: one `led get`, one `bargraph`, `airq` or `alcohol` and `pattern` read) and
 right after each command; with no page open it does not use SMP. The
 **Live** dot shows the WebSocket; the page reconnects by itself (web
 server restarted, laptop resumed) and gets the log lines it missed.
 
 The commands also exist as HTTP for scripts, same names and fields:
-`POST /api/led|bargraph|pattern|logport|reset|smp|ports|info|state` with a
+`POST /api/led|bargraph|pattern|alcohol|logport|reset|smp|ports|info|state` with a
 JSON body, `GET /api/state|info|ports|firmware|airq/diag`, `GET /api/log`
 (Server-Sent Events), `POST /api/firmware?name=…&confirm=mcu|host` with the
 image as the body:
@@ -402,6 +449,12 @@ $C bargraph mask 0x155 -b 30
 $C bargraph brightness 100
 $C bargraph get
 
+$C alcohol               # AN   654 mV  (raw  812 / full scale 3300 mV)
+$C alcohol --calibrate   # in clean air: baseline = now
+$C alcohol -w 1          # every second: breathe alcohol near the sensor, delta rises
+$C alcohol --baseline 0  # no baseline
+
+# with the Air Quality 3 click instead (see "Click boards")
 $C airq                  # eCO2   412 ppm   TVOC     1 ppb
 $C airq -w 2             # every 2 s, Ctrl-C to stop
 ```

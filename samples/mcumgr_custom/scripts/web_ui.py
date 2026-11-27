@@ -527,6 +527,7 @@ class App:
         self.ports = None
         self.kick_ev = threading.Event()
         self.want_info = True
+        self.absent = set()     # groups this firmware does not have
 
     # ---- reads
 
@@ -542,10 +543,20 @@ class App:
         out["leds"] = leds["rsp"]["leds"] if leds["ok"] else None
         out["leds_error"] = None if leds["ok"] else leds["error"]
         if leds["ok"]:
+            # groups not in this firmware answer ENOTSUP: the page hides them
+            out["absent"] = []
             for key, grp, cmd in (("bargraph", smp.GRP_BARGRAPH, smp.BARGRAPH_STATE),
                                   ("airq", smp.GRP_AIRQ, smp.AIRQ_MEASURE),
+                                  ("alcohol", smp.GRP_ALCOHOL, smp.ALCOHOL_MEASURE),
                                   ("patterns", smp.GRP_PATTERN, smp.PATTERN_STATE)):
+                if key in self.absent:
+                    out["absent"].append(key)
+                    continue
                 r = smp_call(link, smp.OP_READ, grp, cmd)
+                if "ENOTSUP" in (r.get("error") or ""):
+                    self.absent.add(key)
+                    out["absent"].append(key)
+                    continue
                 out[key] = r.get("rsp")
                 out[key + "_error"] = r.get("error")
         out["smp"] = link.status()
@@ -590,6 +601,7 @@ class App:
             up = bool(st.get("leds"))
             if up and (self.want_info or not was_up):
                 self.want_info = False
+                self.absent.clear()     # new image or reset: ask the groups again
                 self.info = self.read_info()
                 self.hub.broadcast({"type": "info", "info": self.info})
             was_up = up
@@ -645,6 +657,8 @@ class App:
         if name == "pattern":
             return write(smp.GRP_PATTERN, smp.PATTERN_STATE,
                          ("bank", "pattern", "step_ms", "width"))
+        if name == "alcohol":
+            return write(smp.GRP_ALCOHOL, smp.ALCOHOL_MEASURE, ("calibrate", "baseline_mv"))
         if name == "reset":
             r = smp_call(self.link, smp.OP_WRITE, smp.GRP_OS, smp.OS_RESET)
             self.kick(info=True)

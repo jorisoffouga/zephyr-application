@@ -361,6 +361,33 @@ pre.diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, M
       <div class="row" style="margin-top:10px"><button id="aq-diag">Diagnose sensor</button></div>
       <pre class="diag" id="aq-diag-out" hidden></pre>
     </section>
+
+    <section class="card" id="card-alc" hidden>
+      <div class="card-head"><h2>Alcohol</h2><span class="where">mikroBUS 1 · MQ-3 · AN PC1 (ADC1 IN11)</span></div>
+      <div class="body">
+        <div class="aq">
+          <div class="metric">
+            <div class="kv">Sensor voltage</div>
+            <div><span class="v" id="alc-mv">–</span><span class="u">mV</span></div>
+            <div class="band" id="alc-band">&nbsp;</div>
+            <div class="scale"><i id="alc-mark" style="left:0"></i></div>
+            <canvas class="spark" id="alc-spark"></canvas>
+          </div>
+          <div class="metric">
+            <div class="kv">Above clean air</div>
+            <div><span class="v" id="alc-delta">–</span><span class="u">mV</span></div>
+            <div class="band" id="alc-base">no baseline</div>
+            <div class="kv" id="alc-raw">&nbsp;</div>
+          </div>
+        </div>
+        <div class="fresh"><span class="dot" id="alc-dot"></span><span id="alc-note">waiting for data</span></div>
+      </div>
+      <div class="err"></div>
+      <div class="row" style="margin-top:10px">
+        <button id="alc-cal" title="In clean air: the current voltage becomes the baseline">Calibrate (clean air)</button>
+        <button id="alc-clear">Clear baseline</button>
+      </div>
+    </section>
   </div>
 
   <section class="card fw-card" id="card-fw">
@@ -433,7 +460,7 @@ const LD_COLOR_NAME = { LD3: "orange", LD4: "green", LD5: "red", LD6: "blue" };
 
 let clickMode = "toggle";
 let state = null;
-const history = { eco2: [], tvoc: [] };
+const history = { eco2: [], tvoc: [], alc: [] };
 
 // ---------------------------------------------------------------- helpers
 function toast(msg) {
@@ -465,7 +492,7 @@ function wsConnect() {
     $("#ws-dot").className = "dot bad";
     $("#smp-dot").className = "dot bad";
     $("#smp-dot").parentElement.title = "web server not reachable";
-    for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) $(id).classList.add("dim");
+    for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq", "#card-alc"]) $(id).classList.add("dim");
     for (const done of wsPending.values()) done({ ok: false, error: "web server disconnected" });
     wsPending.clear();
     setTimeout(wsConnect, wsRetry);
@@ -677,6 +704,36 @@ function renderAq(aq, err) {
     (warming ? " · sensor warming up (≈20 s after power on)" : "");
 }
 
+// rough levels of the MQ-3 signal above its clean air baseline (mV);
+// no ppm without a calibration with a known concentration
+const ALC_BANDS = [[50, "clean air", "var(--ok)"], [200, "trace", "#7fb800"], [600, "alcohol", "var(--warn)"],
+                   [Infinity, "strong", "var(--bad)"]];
+function renderAlc(a) {
+  if (!a) { $("#alc-dot").className = "dot"; $("#alc-note").textContent = "no data"; return; }
+  $("#alc-mv").textContent = a.mv;
+  $("#alc-raw").textContent = `raw ${a.raw} · full scale ${a.full_mv} mV`;
+  $("#alc-mark").style.left = (100 * Math.min(1, a.mv / a.full_mv)) + "%";
+  history.alc.push(a.mv);
+  if (history.alc.length > 300) history.alc.shift();
+  const has = a.baseline_mv !== undefined;
+  const [, label, color] = has ? band(Math.max(0, a.delta_mv), ALC_BANDS) : [0, "", "var(--muted)"];
+  $("#alc-delta").textContent = has ? (a.delta_mv > 0 ? "+" : "") + a.delta_mv : "–";
+  $("#alc-base").textContent = has ? `baseline ${a.baseline_mv} mV` : "no baseline: calibrate in clean air";
+  const el = $("#alc-band"); el.textContent = has ? label : "\u00a0"; el.style.color = color;
+  spark($("#alc-spark"), history.alc, color);
+  $("#alc-clear").disabled = !has;
+  $("#alc-dot").className = "dot " + (a.saturated ? "bad" : a.warming ? "warn" : "ok");
+  $("#alc-note").textContent = a.saturated
+    ? "AN at the ADC full scale: the output may exceed 3.3 V, lower the load resistor (potentiometer)"
+    : a.warming ? "heater warming up: values drift for a few minutes" : "reading";
+}
+async function setAlc(body) {
+  const r = await call("alcohol", body);
+  if (!r.ok) toast("alcohol: " + r.error);
+}
+$("#alc-cal").onclick = () => setAlc({ calibrate: true });
+$("#alc-clear").onclick = () => setAlc({ baseline_mv: 0 });
+
 function spark(canvas, data, color) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -710,9 +767,9 @@ function renderStatus(s) {
   $("#btn-release").dataset.released = smp.released ? "1" : "";
   $("#log-port").textContent = s.log.port || "–";
   $("#log-dot").className = "dot " + (s.log.connected ? "ok" : "bad");
-  for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) $(id).classList.toggle("dim", !up);
+  for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq", "#card-alc"]) $(id).classList.toggle("dim", !up);
   if (s.busy) {
-    for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) setCardError(id, "firmware update running…");
+    for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq", "#card-alc"]) setCardError(id, "firmware update running…");
   }
 }
 
@@ -732,6 +789,13 @@ function applyState(s) {
       setCardError("#card-exp", expMissing ? "no expander LEDs in this firmware" : null);
       renderBar(s.bargraph, s.leds);
       setCardError("#card-bar", s.bargraph_error);
+      const absent = s.absent || [];
+      $("#card-aq").hidden = absent.includes("airq");
+      $("#card-alc").hidden = absent.includes("alcohol");
+      if (!absent.includes("alcohol")) {
+        renderAlc(s.alcohol);
+        setCardError("#card-alc", s.alcohol_error);
+      }
       renderAq(s.airq, s.airq_error);
       const pendingInit = /INIT_PENDING/.test(s.airq_error || "");
       setCardError("#card-aq", pendingInit ? null : s.airq_error &&

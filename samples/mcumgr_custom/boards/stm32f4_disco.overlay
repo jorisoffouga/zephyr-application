@@ -23,7 +23,10 @@
  * log"). Logs never mix with the SMP frames.
  *
  * Click boards of this setup:
- *   mikroBUS 1: Air Quality 3 click (CCS811, I2C1 @ 0x5a)
+ *   mikroBUS 1: Alcohol click (MIKROE-1586, MQ-3): analog, AN = PC1
+ *               (ADC1 IN11). The Air Quality 3 click (CCS811, I2C1 @ 0x5a)
+ *               node is kept, disabled: swap the two status lines below
+ *               to go back to it.
  *   mikroBUS 2: MCP23S08 GPIO expander (SPI2) driving 8 LEDs, active low
  *   mikroBUS 3: BarGraph click (MIKROE-1423): two 74HC595 (SPI3), 10 LED
  *               segments, PWM pin = output enable (brightness)
@@ -34,6 +37,7 @@
  *   12..21 bargraph_leds (bar0..bar9)
  */
 
+#include <zephyr/dt-bindings/adc/adc.h>
 #include <zephyr/dt-bindings/pwm/pwm.h>
 #include "stm32f4_disco_partitions.dtsi"
 
@@ -43,6 +47,12 @@
 		zephyr,uart-mcumgr = &usart2;
 		zephyr,console = &cdc_acm_log;
 		zephyr,shell-uart = &cdc_acm_log;
+	};
+
+	/* mikroBUS 1: Alcohol click AN pin, read by src/alcohol_mgmt.c */
+	zephyr,user {
+		io-channels = <&adc1 11>;
+		io-channel-names = "alcohol";
 	};
 
 	/*
@@ -115,10 +125,14 @@
 	 * jumper is on 1: "smp_client.py airq diag" shows which one answers).
 	 * Deferred init: src/airq_mgmt.c initializes the driver about 2.5 s
 	 * after boot, when the USB log is up, and logs the result.
+	 * Disabled: the Alcohol click is on mikroBUS 1. To use this click
+	 * again: status "okay" here, and remove zephyr,user io-channels
+	 * (the alcohol group then leaves the build, the airq group comes back).
 	 */
 	ccs811: ccs811@5a {
 		compatible = "ams,ccs811";
 		reg = <0x5a>;
+		status = "disabled";
 		zephyr,deferred-init;
 		reset-gpios = <&gpioe 10 GPIO_ACTIVE_LOW>;	/* RST */
 		wake-gpios = <&gpiob 12 GPIO_ACTIVE_LOW>;	/* CS */
@@ -128,6 +142,27 @@
 
 &audio_codec {
 	status = "disabled";
+};
+
+/*
+ * mikroBUS 1 AN: PC1 = ADC1 IN11. The board default pins (PA1, PA6) are
+ * dropped: PA1 is the mikroBUS 1 PWM pin. The MQ-3 load resistor is up to
+ * tens of kOhm: longest sampling time (480 cycles) to charge the ADC.
+ */
+&adc1 {
+	pinctrl-0 = <&adc1_in11_pc1>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	channel@b {
+		reg = <11>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_TICKS, 480)>;
+		zephyr,resolution = <12>;
+	};
 };
 
 /* same peripheral as SPI3 (BarGraph), at the same address */

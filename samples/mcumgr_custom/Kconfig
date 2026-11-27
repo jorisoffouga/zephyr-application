@@ -60,6 +60,32 @@ config APP_AIRQ_MGMT
 	  Air Quality 3 click (CCS811): eCO2 and TVOC, and an I2C diagnostic.
 	  See include/airq_mgmt.h.
 
+# the comma of "zephyr,user" would split the macro arguments
+ZEPHYR_USER := zephyr,user
+
+config APP_ALCOHOL_MGMT
+	bool "Custom MCUmgr group 68: alcohol"
+	default y
+	depends on MCUMGR && ADC && $(dt_node_has_prop,/$(ZEPHYR_USER),io-channels)
+	help
+	  Alcohol click (MQ-3, analog output on the mikroBUS AN pin): sensor
+	  voltage, clean air baseline. See include/alcohol_mgmt.h.
+
+config APP_ALCOHOL_WARMUP_S
+	int "MQ-3 heater warm-up after power on, in s"
+	depends on APP_ALCOHOL_MGMT
+	default 180
+	help
+	  "warming" is true in the measure response during this time after
+	  boot: the MQ-3 output drifts while its heater warms up. A new
+	  sensor needs about 24 h of burn-in for stable values.
+
+config APP_ALCOHOL_SAMPLES
+	int "ADC samples averaged per measure"
+	depends on APP_ALCOHOL_MGMT
+	range 1 256
+	default 16
+
 config APP_PATTERN_MGMT
 	bool "Custom MCUmgr group 67: pattern"
 	default y

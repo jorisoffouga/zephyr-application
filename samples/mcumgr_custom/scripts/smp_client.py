@@ -11,6 +11,7 @@ framing, a small CBOR codec, and the commands of the sample:
   bargraph  get | level N | mask M | brightness P custom group 65
   airq      [-w S] | --diag                       custom group 66
   pattern   get | start BANK NAME [-t MS] [-w N] | stop BANK   custom group 67
+  alcohol   [-w S] [--calibrate | --baseline MV]  custom group 68
   info   [-f FORMAT] | bootloader                 OS group
   echo   TEXT                                     OS group
   reset                                           OS group
@@ -132,13 +133,14 @@ def cbor_decode(data):
 
 OP_READ, OP_READ_RSP, OP_WRITE, OP_WRITE_RSP = 0, 1, 2, 3
 GRP_OS, GRP_IMG = 0, 1
-GRP_LED, GRP_BARGRAPH, GRP_AIRQ, GRP_PATTERN = 64, 65, 66, 67  # include/app_mgmt.h
+GRP_LED, GRP_BARGRAPH, GRP_AIRQ, GRP_PATTERN, GRP_ALCOHOL = 64, 65, 66, 67, 68  # include/app_mgmt.h
 OS_ECHO, OS_RESET, OS_INFO, OS_BOOTLOADER_INFO = 0, 5, 7, 8
 IMG_STATE, IMG_UPLOAD = 0, 1
 LED_STATE, LED_VERSION = 0, 1
 BARGRAPH_STATE = 0
 AIRQ_MEASURE, AIRQ_DIAG = 0, 1
 PATTERN_STATE = 0
+ALCOHOL_MEASURE = 0
 
 MCUBOOT_MODES = [  # enum mcuboot_mode, bootutil/boot_status.h
     "single slot", "swap using scratch", "upgrade only", "swap using move",
@@ -158,6 +160,7 @@ GROUP_ERR = {  # include/<group>_mgmt.h
                    4: "INVALID_BRIGHTNESS", 5: "NO_DEVICE", 6: "IO"},
     GRP_AIRQ: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INIT_PENDING"},
     GRP_PATTERN: {1: "UNKNOWN", 2: "INVALID_BANK", 3: "INVALID_PATTERN", 4: "INVALID_STEP"},
+    GRP_ALCOHOL: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INVALID"},
 }
 
 
@@ -375,6 +378,30 @@ def cmd_airq(smp, a):
         time.sleep(a.watch)
 
 
+def show_alcohol(r):
+    line = f"AN {r['mv']:>5} mV  (raw {r['raw']:>4} / full scale {r['full_mv']} mV)"
+    if "baseline_mv" in r:
+        line += f"   baseline {r['baseline_mv']} mV, delta {r['delta_mv']:+d} mV"
+    if r["warming"]:
+        line += "   [heater warming up]"
+    if r["saturated"]:
+        line += "   [SATURATED: output may exceed 3.3 V, lower the load resistor]"
+    print(line, flush=True)
+
+
+def cmd_alcohol(smp, a):
+    if a.calibrate or a.baseline is not None:
+        req = {"calibrate": True} if a.calibrate else {"baseline_mv": a.baseline}
+        show_alcohol(smp.request(OP_WRITE, GRP_ALCOHOL, ALCOHOL_MEASURE, req))
+        if not a.watch:
+            return
+    while True:
+        show_alcohol(smp.request(OP_READ, GRP_ALCOHOL, ALCOHOL_MEASURE))
+        if not a.watch:
+            return
+        time.sleep(a.watch)
+
+
 def show_pattern(b):
     run = (f"{b['pattern']}, step {b['step_ms']} ms, width {b['width']}"
            if b["pattern"] != "off" else "off")
@@ -537,6 +564,15 @@ def main():
     aq.add_argument("--diag", action="store_true",
                     help="driver state and I2C probe of the CCS811")
 
+    al = sub.add_parser("alcohol", help="custom alcohol group: MQ-3 voltage")
+    al.add_argument("-w", "--watch", type=float, metavar="S",
+                    help="read again every S seconds (Ctrl-C to stop)")
+    ag = al.add_mutually_exclusive_group()
+    ag.add_argument("--calibrate", action="store_true",
+                    help="clean air now: baseline = the current voltage")
+    ag.add_argument("--baseline", type=int, metavar="MV",
+                    help="set the baseline in mV (0: none)")
+
     sub.add_parser("version", help="custom group: application versions")
     sub.add_parser("info", help="OS group: uname-like info").add_argument(
         "-f", "--format", default="a", help="format letters (default a: all)")
@@ -563,6 +599,7 @@ def main():
             "led": cmd_led,
             "bargraph": cmd_bargraph,
             "airq": cmd_airq,
+            "alcohol": cmd_alcohol,
             "pattern": cmd_pattern,
             "version": cmd_version,
             "info": cmd_info,
