@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "MCUmgr update + custom groups"
+
+config APP_BOOT_BLINK_MS
+	int "Boot state of LED 0: blink toggle interval in ms"
+	default 1000
+	help
+	  LED 0 blinks at this rate after boot, until a client changes it.
+	  Each test image uses a different rate, so the running version is
+	  visible on the board.
+
+config APP_SIMULATE_BAD_IMAGE
+	bool "Simulate a broken image (never confirm)"
+	help
+	  The self-test fails, so the image is never confirmed and MCUboot
+	  reverts it at the next reset.
+
+config APP_LED_WQ_STACK_SIZE
+	int "Stack size of the LED blink work queue"
+	default 1024
+	help
+	  The blinking runs from a work queue, not from timer ISRs: LEDs on
+	  SPI expanders (MCP23S08, 74HC595) cannot be driven from an ISR.
+
+module = APP
+module-str = Application
+source "subsys/logging/Kconfig.template.log_config"
+
+# Custom MCUmgr groups. IDs in include/app_mgmt.h.
+
+config APP_LED_MGMT
+	bool "Custom MCUmgr group 64: led"
+	default y
+	depends on MCUMGR
+	# response: base map -> "leds" list -> one map per LED
+	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
+	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
+	help
+	  Read and set the state of all the LEDs:
+	  on, off, blink. See include/led_mgmt.h.
+
+source "Kconfig.zephyr"

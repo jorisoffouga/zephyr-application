@@ -1,0 +1,3 @@
+# .swu files generated for tests
+*.swu
+__pycache__/

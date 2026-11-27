@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# STM32F407VG: 128 KiB sectors -> swap using scratch (keeps test / confirm
+# and rollback), as the other STM32F4 boards of Zephyr.
+choice MCUBOOT_MODE
+	default MCUBOOT_MODE_SWAP_SCRATCH if "$(BOARD)" = "stm32f4_disco"
+endchoice
+
+source "share/sysbuild/Kconfig"
