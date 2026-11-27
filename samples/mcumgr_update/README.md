@@ -155,6 +155,33 @@ $S/mkswu.sh $B-v1/mcumgr_update/zephyr/zephyr.signed.bin  v1.swu  $UART  host  1
 
 The `.swu` files are specific to a board: the images are built for it.
 
+### Compressed or encrypted image
+
+`mkswu.sh -z zlib` compresses the image in the `.swu`, `-k <key file>`
+encrypts it (AES-256-CBC, a random IV per image stored as `ivt`). SWUpdate
+decompresses / decrypts the stream before the handler, which still uploads
+the original signed image. The handler needs the image size before the
+upload: swugenerator >= 0.9 adds `decompressed-size` / `decrypted-size`
+(0.6 does not, the update then fails before contacting the MCU).
+
+```sh
+# key file for swupdate -K: "<key hex> <iv hex>" on one line
+echo "$(openssl rand -hex 32) $(openssl rand -hex 16)" > aes.key
+
+B=build-stm32f4_disco-v2/mcumgr_update/zephyr/zephyr.signed.bin
+$S/mkswu.sh -z zlib            $B v2-zlib.swu     /dev/ttyUSB0 mcu 2.0.0
+$S/mkswu.sh -k aes.key         $B v2-enc.swu      /dev/ttyUSB0 mcu 2.0.0
+$S/mkswu.sh -z zlib -k aes.key $B v2-zlib-enc.swu /dev/ttyUSB0 mcu 2.0.0
+
+../swupdate/build-host/swupdate -v -i v2-zlib.swu
+../swupdate/build-host/swupdate -v -K aes.key -i v2-enc.swu
+```
+
+`host_defconfig` enables `CONFIG_GUNZIP` and `CONFIG_ENCRYPTED_IMAGES`.
+zstd (`-z zstd`) also needs `CONFIG_ZSTD` and libzstd-dev on the host.
+With a wrong or missing key, the decryption fails before the end of the
+upload: the image is not marked for test and the MCU is not reset.
+
 ### Both boards in one .swu
 
 With the two boards connected, `swupdate/sw-description-two-boards`
