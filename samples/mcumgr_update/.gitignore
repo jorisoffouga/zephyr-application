@@ -1,0 +1,4 @@
+# .swu files generated for tests (swupdate/mkswu.sh)
+*.swu
+# test AES keys (swupdate/mkswu.sh -k)
+*.key

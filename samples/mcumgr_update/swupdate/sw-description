@@ -1,0 +1,21 @@
+software =
+{
+	version = "@@VERSION@@";
+	description = "MCU update over MCUmgr/SMP";
+
+	images: (
+		{
+			/* found in the artifactory (-a), sha256 added by swugenerator */
+			filename = "zephyr.signed.bin";
+			type = "mcumgr";
+			device = "@@DEVICE@@";
+			properties: {
+				baudrate = "115200";
+				chunk-size = "128";
+				confirm = "@@CONFIRM@@";
+				confirm-timeout-ms = "15000";
+				boot-timeout-ms = "60000";
+			};
+		}
+	);
+}

@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "MCUmgr update + custom groups"
+
+config APP_BOOT_BLINK_MS
+	int "Boot state of LED 0: blink toggle interval in ms"
+	default 1000
+	help
+	  LED 0 blinks at this rate after boot, until a client changes it.
+	  Each test image uses a different rate, so the running version is
+	  visible on the board.
+
+config APP_SIMULATE_BAD_IMAGE
+	bool "Simulate a broken image (never confirm)"
+	help
+	  The self-test fails, so the image is never confirmed and MCUboot
+	  reverts it at the next reset.
+
+config APP_LED_WQ_STACK_SIZE
+	int "Stack size of the LED blink work queue"
+	default 1024
+	help
+	  The blinking runs from a work queue, not from timer ISRs: LEDs on
+	  SPI expanders (MCP23S08, 74HC595) cannot be driven from an ISR.
+
+module = APP
+module-str = Application
+source "subsys/logging/Kconfig.template.log_config"
+
+# Custom MCUmgr groups. IDs in include/app_mgmt.h.
+
+config APP_LED_MGMT
+	bool "Custom MCUmgr group 64: led"
+	default y
+	depends on MCUMGR
+	# response: base map -> "leds" list -> one map per LED
+	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
+	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
+	help
+	  Read and set the state of all the LEDs (board, expander, bargraph):
+	  on, off, blink. See include/led_mgmt.h.
+
+config APP_BARGRAPH_MGMT
+	bool "Custom MCUmgr group 65: bargraph"
+	default y
+	depends on MCUMGR && PWM && DT_HAS_TI_SN74HC595_ENABLED
+	depends on $(dt_nodelabel_enabled,bargraph_leds)
+	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
+	help
+	  BarGraph click: level, segment mask and PWM brightness.
+	  See include/bargraph_mgmt.h.
+
+config APP_AIRQ_MGMT
+	bool "Custom MCUmgr group 66: airq"
+	default y
+	depends on MCUMGR && I2C && GPIO && DT_HAS_AMS_CCS811_ENABLED
+	# diag response: base map -> "probe" list -> one map per address
+	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
+	help
+	  Air Quality 3 click (CCS811): eCO2 and TVOC, and an I2C diagnostic.
+	  See include/airq_mgmt.h.
+
+# the comma of "zephyr,user" would split the macro arguments
+ZEPHYR_USER := zephyr,user
+
+config APP_ALCOHOL_MGMT
+	bool "Custom MCUmgr group 68: alcohol"
+	default y
+	depends on MCUMGR && ADC && $(dt_node_has_prop,/$(ZEPHYR_USER),io-channels)
+	help
+	  Alcohol click (MQ-3, analog output on the mikroBUS AN pin): sensor
+	  voltage, clean air baseline. See include/alcohol_mgmt.h.
+
+config APP_ALCOHOL_WARMUP_S
+	int "MQ-3 heater warm-up after power on, in s"
+	depends on APP_ALCOHOL_MGMT
+	default 180
+	help
+	  "warming" is true in the measure response during this time after
+	  boot: the MQ-3 output drifts while its heater warms up. A new
+	  sensor needs about 24 h of burn-in for stable values.
+
+config APP_ALCOHOL_SAMPLES
+	int "ADC samples averaged per measure"
+	depends on APP_ALCOHOL_MGMT
+	range 1 256
+	default 16
+
+config APP_EEPROM_MGMT
+	bool "Custom MCUmgr group 69: eeprom"
+	default y
+	depends on MCUMGR && EEPROM && $(dt_nodelabel_enabled,eeprom)
+	help
+	  EEPROM click raw access (info, read, write, erase) and the LED
+	  settings store. See include/eeprom_mgmt.h.
+
+config APP_STORE
+	bool "Keep the LED settings in the EEPROM"
+	default y
+	depends on EEPROM && CRC && $(dt_nodelabel_enabled,eeprom)
+	# save a pending change before an SMP reset
+	select MCUMGR_MGMT_NOTIFICATION_HOOKS if MCUMGR_GRP_OS
+	select MCUMGR_GRP_OS_RESET_HOOK if MCUMGR_GRP_OS
+	help
+	  LED modes and periods and the bank patterns are saved in the
+	  EEPROM click and restored at boot. See include/app_store.h.
+
+if APP_STORE
+
+config APP_STORE_OFFSET
+	hex "EEPROM offset of the settings record"
+	default 0x300
+	help
+	  Default: the last 256-byte block of the 24C08 (0x300..0x3ff).
+
+config APP_STORE_SIZE
+	int "EEPROM bytes reserved for the settings record"
+	default 256
+	help
+	  Two copies of the record, half each.
+
+config APP_STORE_AUTOSAVE
+	bool "Save the settings after each change made over SMP"
+	default y
+	help
+	  Off: only the "eeprom store save" command writes them. Can also be
+	  switched at run time (eeprom group, command store).
+
+config APP_STORE_DELAY_MS
+	int "Delay between the last change and the save, in ms"
+	default 2000
+	help
+	  Changes within this delay give one EEPROM write (the 24C08 takes
+	  about 1 million write cycles per byte).
+
+endif # APP_STORE
+
+config APP_PATTERN_MGMT
+	bool "Custom MCUmgr group 67: pattern"
+	default y
+	depends on MCUMGR
+	# response: base map -> "banks" list -> one map per bank
+	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
+	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
+	help
+	  LED patterns run by the firmware (k2000, chase, fill, alternate,
+	  counter) on the board, expander or bargraph LEDs.
+	  See include/pattern_mgmt.h.
+
+config APP_AIRQ_INIT_DELAY_MS
+	int "Delay before the CCS811 start, in ms"
+	depends on APP_AIRQ_MGMT
+	default 2500
+	help
+	  src/airq_mgmt.c starts the sensor after this delay, once the USB
+	  log is up, so a failure is visible. It tries 3 times, then the
+	  measure command tries again every 5 s.
+
+source "Kconfig.zephyr"

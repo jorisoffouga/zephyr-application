@@ -1,0 +1,17 @@
+# Copyright (c) 2026, Joris Offouga
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  NXP PCF8591 analog inputs AIN0-AIN3, 8-bit, single-ended. Child of an
+  "nxp,pcf8591" node.
+
+compatible: "nxp,pcf8591-adc"
+
+include: adc-controller.yaml
+
+properties:
+  "#io-channel-cells":
+    const: 1
+
+io-channel-cells:
+  - input

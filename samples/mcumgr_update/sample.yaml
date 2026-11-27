@@ -1,0 +1,20 @@
+sample:
+  name: MCUmgr update test (SWUpdate mcumgr handler)
+  description: Signed MCUboot application updated over SMP/UART by SWUpdate
+common:
+  sysbuild: true
+  # no console output: tested with SWUpdate on the host, see README.md
+  build_only: true
+  platform_allow:
+    - frdm_k64f
+    - stm32f4_disco
+  integration_platforms:
+    - frdm_k64f
+    - stm32f4_disco
+  tags: mcumgr mcuboot dfu
+tests:
+  sample.mcumgr_update.v1: {}
+  sample.mcumgr_update.v2:
+    extra_args: EXTRA_CONF_FILE="v2.conf"
+  sample.mcumgr_update.bad:
+    extra_args: EXTRA_CONF_FILE="bad.conf"

@@ -1,0 +1,86 @@
+/*
+ * WaRP7 IO board devices on I2C3, driven by the Cortex-M4 instead of OP-TEE.
+ * Must match bdx-iot-external configs/warp7_m4_defconfig: OP-TEE built
+ * without the I2C3 drivers, Linux DT imx7s-warp-m4-io.dts (I2C3 disabled,
+ * MCP23008 RESET# held high by Linux, SoC RTC for Linux).
+ *
+ * The PCF8591 uses the zephyr-application drivers (drivers/mfd, adc, dac):
+ * ADC io-adc (AIN0-AIN3), DAC io-dac (AOUT).
+ */
+/ {
+	aliases {
+		io-i2c = &i2c3;
+		io-gpio = &io_mcp23008;
+		io-temp = &io_lm75a;
+		io-eeprom = &io_eeprom;
+		io-rtc = &io_rtc;
+		io-adc = &io_adc;
+		io-dac = &io_dac;
+	};
+};
+
+&i2c3 {
+	status = "okay";
+
+	/* RESET# on GPIO7_IO4, held high by Linux (GPIO7 belongs to Linux) */
+	io_mcp23008: gpio@20 {
+		compatible = "microchip,mcp23008";
+		reg = <0x20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <8>;
+	};
+
+	pcf8591@48 {
+		compatible = "nxp,pcf8591";
+		reg = <0x48>;
+		/* VREF on the 3.3 V supply */
+		vref-mv = <3300>;
+
+		io_adc: adc {
+			compatible = "nxp,pcf8591-adc";
+			#io-channel-cells = <1>;
+		};
+
+		io_dac: dac {
+			compatible = "nxp,pcf8591-dac";
+			#io-channel-cells = <1>;
+		};
+	};
+
+	io_lm75a: lm75a@4b {
+		compatible = "lm75";
+		reg = <0x4b>;
+	};
+
+	/* 24C08: 1 KiB at 0x50-0x53, 8-bit word address */
+	io_eeprom: eeprom@50 {
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <1024>;
+		pagesize = <16>;
+		address-width = <8>;
+		timeout = <5>;
+	};
+
+	io_rtc: rtc@6f {
+		compatible = "microchip,mcp7940n";
+		reg = <0x6f>;
+	};
+};
+
+/* GPIO7 (MCP2515 interrupt, MCP23008 reset) and I2C4 belong to Linux */
+&gpio7 {
+	status = "disabled";
+};
+
+&i2c4 {
+	status = "disabled";
+
+	/* On-board IMU, unlabeled: dropped with its bus */
+	/delete-node/ fxas21002@20;
+};
+
+&fxos8700 {
+	status = "disabled";
+};

@@ -1,0 +1,24 @@
+sample:
+  name: MCUmgr update + custom groups
+  description: >
+    Signed MCUboot application: image update over SMP/UART plus custom
+    SMP groups (LED control and application version)
+common:
+  sysbuild: true
+  # no console output: tested with scripts/smp_client.py, see README.md
+  build_only: true
+  platform_allow:
+    - stm32f4_disco
+  integration_platforms:
+    - stm32f4_disco
+  tags: mcumgr mcuboot dfu
+tests:
+  sample.mcumgr_custom.v1: {}
+  sample.mcumgr_custom.v2:
+    extra_args: EXTRA_CONF_FILE="v2.conf"
+  sample.mcumgr_custom.bad:
+    extra_args: EXTRA_CONF_FILE="bad.conf"
+  sample.mcumgr_custom.alcohol:
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE="boards/clicks/alcohol_slot1.overlay"
+      - EXTRA_CONF_FILE="boards/clicks/alcohol_slot1.conf"

@@ -1,0 +1,9 @@
+# i.MX8MP Debix Model A board
+
+# Copyright (c) 2023, Joris Offouga
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_IMX8MP_DEBIX_MODEL_A
+	bool "NXP i.MX8MP Debix Model A"
+	select SOC_MIMX8ML8_M7
+	select SOC_PART_NUMBER_MIMX8ML8DVNLZ

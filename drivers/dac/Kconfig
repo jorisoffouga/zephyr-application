@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config DAC_PCF8591
+	bool "NXP PCF8591 DAC"
+	default y
+	depends on DT_HAS_NXP_PCF8591_DAC_ENABLED
+	depends on DAC
+	select MFD
+	help
+	  Enable the 8-bit analog output of the NXP PCF8591.
+
+config DAC_PCF8591_INIT_PRIORITY
+	int "NXP PCF8591 DAC init priority"
+	default 80
+	depends on DAC_PCF8591
+	help
+	  After the PCF8591 MFD (MFD_PCF8591_INIT_PRIORITY).

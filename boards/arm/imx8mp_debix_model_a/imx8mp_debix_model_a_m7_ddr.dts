@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) 2026, Joris Offouga
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <nxp/imx/nxp_imx8ml_m7.dtsi>
+#include "imx8mp_debix_model_a-pinctrl.dtsi"
+
+/ {
+	model = "NXP i.MX8M Plus Debix Model A board";
+	compatible = "nxp,mimx8mp_debix";
+
+	chosen {
+		/* UART3 (UART3_RXD/UART3_TXD pads), disabled in the Linux DT */
+		zephyr,console = &uart3;
+		zephyr,shell-uart = &uart3;
+		/* DDR */
+
+		zephyr,flash = &ddr_code;
+		zephyr,sram = &ddr_sys;
+		zephyr,ipc_shm = &rpmsg_shm;
+	};
+
+	rpmsg_shm: memory@55400000 {
+		compatible = "zephyr,memory-region";
+		zephyr,memory-region = "RPMSG_SHM";
+		reg = <0x55400000 0x100000>;
+	};
+};
+
+/ {
+	soc {
+		/* Not in nxp_imx8ml_m7.dtsi; same as nxp_imx8m_m4.dtsi */
+		uart3: uart@30880000 {
+			compatible = "nxp,imx-iuart";
+			reg = <0x30880000 0x10000>;
+			interrupts = <28 3>;
+			clocks = <&ccm IMX_CCM_UART3_CLK 0x68 12>;
+			status = "disabled";
+		};
+	};
+};
+
+&uart3 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart3_default>;
+	pinctrl-names = "default";
+};
+
+&gpio3 {
+	status = "disabled";
+};
+
+&mailbox0 {
+	status = "okay";
+};

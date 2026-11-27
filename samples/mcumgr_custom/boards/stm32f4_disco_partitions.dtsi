@@ -1,0 +1,44 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * MCUboot flash layout for the STM32F407VG (1 MiB) of the STM32F4DISCOVERY,
+ * used by the application and by MCUboot (see sysbuild.cmake).
+ *
+ * Sectors: 4 x 16 KiB, 1 x 64 KiB, 7 x 128 KiB. Both slots and the scratch
+ * area are made of 128 KiB sectors (swap using scratch).
+ */
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* sectors 0-3 */
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000000 DT_SIZE_K(64)>;
+			read-only;
+		};
+
+		/* sector 4 (64 KiB) unused */
+
+		/* sectors 5-6 */
+		slot0_partition: partition@20000 {
+			label = "image-0";
+			reg = <0x00020000 DT_SIZE_K(256)>;
+		};
+
+		/* sectors 7-8 */
+		slot1_partition: partition@60000 {
+			label = "image-1";
+			reg = <0x00060000 DT_SIZE_K(256)>;
+		};
+
+		/* sector 9 */
+		scratch_partition: partition@a0000 {
+			label = "image-scratch";
+			reg = <0x000a0000 DT_SIZE_K(128)>;
+		};
+	};
+};

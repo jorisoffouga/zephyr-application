@@ -1,0 +1,15 @@
+/*
+ * Started by Linux remoteproc or OP-TEE, which only release the M4 reset:
+ * code in OCRAM (128 KiB, reserved for the M4 in Linux), vector table
+ * relocated to address 0, OCRAM_S (CONFIG_ROMSTART_RELOCATION_ROM); data in
+ * the TCMU (board default).
+ */
+/ {
+	chosen {
+		zephyr,flash = &ocram_code;
+	};
+};
+
+&user_switch_1 {
+	status = "disabled";
+};

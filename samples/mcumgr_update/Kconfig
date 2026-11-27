@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "MCUmgr update test application"
+
+config APP_BLINK_MS
+	int "LED blink half-period in ms"
+	default 1000
+	help
+	  Each test image uses a different blink rate, so the running
+	  version is visible on the board.
+
+config APP_SIMULATE_BAD_IMAGE
+	bool "Simulate a broken image (never confirm)"
+	help
+	  The self-test fails, so the image is never confirmed.
+	  SWUpdate times out waiting for the confirmation, resets the MCU
+	  and MCUboot reverts to the previous image.
+
+source "Kconfig.zephyr"

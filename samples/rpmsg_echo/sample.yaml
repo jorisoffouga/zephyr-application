@@ -1,0 +1,9 @@
+sample:
+  description: RPMsg echo over an rpmsg-tty channel, for testing remoteproc
+  name: rpmsg echo
+common:
+  tags: ipc openamp
+  harness: console
+tests:
+  sample.ipc.rpmsg_echo:
+    platform_allow: warp7/mcimx7d/m4
