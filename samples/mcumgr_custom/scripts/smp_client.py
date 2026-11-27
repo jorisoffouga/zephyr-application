@@ -9,6 +9,7 @@ framing, a small CBOR codec, and the commands of the sample:
   led       get | on N | off N | blink N [-t MS]  custom group 64
   version                                         custom group 64
   bargraph  get | level N | mask M | brightness P custom group 65
+  airq      [-w S] | --diag                       custom group 66
   info   [-f FORMAT] | bootloader                 OS group
   echo   TEXT                                     OS group
   reset                                           OS group
@@ -130,11 +131,12 @@ def cbor_decode(data):
 
 OP_READ, OP_READ_RSP, OP_WRITE, OP_WRITE_RSP = 0, 1, 2, 3
 GRP_OS, GRP_IMG = 0, 1
-GRP_LED, GRP_BARGRAPH = 64, 65  # include/app_mgmt.h
+GRP_LED, GRP_BARGRAPH, GRP_AIRQ = 64, 65, 66  # include/app_mgmt.h
 OS_ECHO, OS_RESET, OS_INFO, OS_BOOTLOADER_INFO = 0, 5, 7, 8
 IMG_STATE, IMG_UPLOAD = 0, 1
 LED_STATE, LED_VERSION = 0, 1
 BARGRAPH_STATE = 0
+AIRQ_MEASURE, AIRQ_DIAG = 0, 1
 
 MCUBOOT_MODES = [  # enum mcuboot_mode, bootutil/boot_status.h
     "single slot", "swap using scratch", "upgrade only", "swap using move",
@@ -152,6 +154,7 @@ GROUP_ERR = {  # include/<group>_mgmt.h
               4: "INVALID_PERIOD", 5: "GPIO"},
     GRP_BARGRAPH: {1: "UNKNOWN", 2: "INVALID_LEVEL", 3: "INVALID_MASK",
                    4: "INVALID_BRIGHTNESS", 5: "NO_DEVICE", 6: "IO"},
+    GRP_AIRQ: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INIT_PENDING"},
 }
 
 
@@ -322,6 +325,53 @@ def cmd_bargraph(smp, a):
     show_bargraph(smp.request(OP_WRITE, GRP_BARGRAPH, BARGRAPH_STATE, req))
 
 
+def airq_hint(d):
+    """Explain an airq diag answer (include/airq_mgmt.h)."""
+    found = [p for p in d["probe"] if p.get("ack")]
+    if d["init"] == "ok":
+        return "driver running"
+    if not found:
+        return ("nothing answers at 0x5a / 0x5b on I2C1 (PB8 SCL, PB7 SDA): click "
+                "seated on mikroBUS 1? power, nWAKE (PB12), I2C pull-ups")
+    p = found[0]
+    if p["addr"] != d["addr"]:
+        return (f"CCS811 at 0x{p['addr']:02x} but the devicetree says 0x{d['addr']:02x}: "
+                "fix reg in boards/stm32f4_disco.overlay (or the ADDR jumper)")
+    if p["hw_id"] != 0x81:
+        return f"device at 0x{p['addr']:02x} is not a CCS811 (hw_id 0x{p['hw_id']:02x})"
+    if not p["status"] & 0x10:
+        return "CCS811 without valid application firmware (status bit APP_VALID = 0)"
+    return "CCS811 answers: see the ccs811 driver error in the boot log"
+
+
+def cmd_airq_diag(smp):
+    d = smp.request(OP_READ, GRP_AIRQ, AIRQ_DIAG)
+    print(f"driver init: {d['init']} ({d['init_rc']}), devicetree address 0x{d['addr']:02x}")
+    for p in d["probe"]:
+        if not p.get("ack"):
+            print(f"  0x{p['addr']:02x}: no answer")
+            continue
+        st = p["status"]
+        print(f"  0x{p['addr']:02x}: hw_id 0x{p['hw_id']:02x}, hw_version 0x{p['hw_version']:02x}, "
+              f"status 0x{st:02x} (app {'valid' if st & 0x10 else 'MISSING'}, "
+              f"{'running' if st & 0x80 else 'boot mode'}{', ERROR' if st & 1 else ''}), "
+              f"error_id 0x{p['error_id']:02x}, app fw 0x{p['fw_app']:04x}")
+    print("=>", airq_hint(d))
+
+
+def cmd_airq(smp, a):
+    if a.diag:
+        return cmd_airq_diag(smp)
+    while True:
+        rsp = smp.request(OP_READ, GRP_AIRQ, AIRQ_MEASURE)
+        stale = "" if rsp["fresh"] else "  (no new result)"
+        print(f"eCO2 {rsp['eco2']:>5} ppm   TVOC {rsp['tvoc']:>5} ppb{stale}",
+              flush=True)
+        if not a.watch:
+            return
+        time.sleep(a.watch)
+
+
 def cmd_version(smp, _a):
     """Custom group: protocol / image / build versions of the application."""
     rsp = smp.request(OP_READ, GRP_LED, LED_VERSION)
@@ -449,6 +499,12 @@ def main():
             sp.add_argument("-b", "--brightness", type=int,
                             help="also set the brightness (percent)")
 
+    aq = sub.add_parser("airq", help="custom airq group: eCO2 / TVOC")
+    aq.add_argument("-w", "--watch", type=float, metavar="S",
+                    help="read again every S seconds (Ctrl-C to stop)")
+    aq.add_argument("--diag", action="store_true",
+                    help="driver state and I2C probe of the CCS811")
+
     sub.add_parser("version", help="custom group: application versions")
     sub.add_parser("info", help="OS group: uname-like info").add_argument(
         "-f", "--format", default="a", help="format letters (default a: all)")
@@ -474,6 +530,7 @@ def main():
         commands = {
             "led": cmd_led,
             "bargraph": cmd_bargraph,
+            "airq": cmd_airq,
             "version": cmd_version,
             "info": cmd_info,
             "bootloader": cmd_bootloader,

@@ -9,20 +9,22 @@ Discovery Shield. One UART carries MCUmgr SMP for:
   (`MGMT_GROUP_ID_PERUSER`), IDs in `include/app_mgmt.h`:
   * 64 `led`: the 22 LEDs (board, MCP23S08 expander, bargraph) on, off,
     blinking, and the application version;
-  * 65 `bargraph`: BarGraph click level / mask / PWM brightness.
+  * 65 `bargraph`: BarGraph click level / mask / PWM brightness;
+  * 66 `airq`: Air Quality 3 click eCO2 and TVOC.
 
-To add a feature, add a group (next ID: 66) or a command to an
+To add a feature, add a group (next ID: 67) or a command to an
 existing group. See "Adding a group or a command" below.
 
 ```
  Linux host                                    STM32F4DISCOVERY + MikroE shield
  ┌──────────────────────────────┐  USB-UART   ┌──────────────────────────────────────┐
  │ scripts/smp_client.py        │  FT232RL    │ MCUmgr UART transport (USART2)       │
- │   led / bargraph / version   │ ─── SMP ──▶ │  ├ group 0  os        echo, reset    │
+ │   led / bargraph / airq / …  │ ─── SMP ──▶ │  ├ group 0  os        echo, reset    │
  │   image upload / list / test │ /dev/ttyUSB0│  ├ group 1  img       upload, state  │
  │ swupdate (mcumgr handler)    │             │  ├ group 64 led       ── board LEDs  │
  └──────────────────────────────┘             │  │                    ── SPI2 MCP23S08 (mikroBUS 2)
-                                              │  └ group 65 bargraph  ── SPI3 74HC595 + TIM3 PWM (mikroBUS 3)
+                                              │  ├ group 65 bargraph  ── SPI3 74HC595 + TIM3 PWM (mikroBUS 3)
+                                              │  └ group 66 airq      ── I2C1 CCS811 (mikroBUS 1)
                                               │ MCUboot: slot0 / slot1 / scratch     │
                                               └──────────────────────────────────────┘
 ```
@@ -51,18 +53,22 @@ an upload in progress: requests are handled one at a time.
 
 | mikroBUS | click board                    | bus                          | other pins |
 |----------|--------------------------------|------------------------------|------------|
+| 1        | Air Quality 3 (CCS811)         | I2C1 PB8 SCL / PB7 SDA, 0x5a | RST PE10, WAKE = CS PB12, INT PE7 |
 | 2        | MCP23S08 expander, 8 LEDs active low | SPI2 PB13/14/15, CS PE14 | (RST PE12, INT PE8 not used) |
 | 3        | BarGraph click (MIKROE-1423)   | SPI3 PB3/4/5, CS PE5 = latch | RST PE4 = /MR, PWM PB1 TIM3_CH4 = enable|
 
 The full mikroBUS pinout of the shield, from its schematic, is in
 `boards/stm32f4_disco.overlay`. Notes:
 
+* The shield puts I2C1 on PB8/PB7. The Discovery uses PB6/PB9 for its
+  CS43L22 audio codec, which the overlay disables.
 * The MCP23S08 is addressed with A1/A0 = 0 (the Zephyr driver sends
   opcode 0x40 with HAEN off, so it works for any A1/A0 strap). Wire
   mikroBUS 2 RST to the expander and uncomment `reset-gpios` if needed.
 * Unchecked assumptions about the hardware (the overlay says where to change them):
   * the BarGraph segment n is on 74HC595 output n and lit when high;
-  * the expander LEDs are on GP0..GP7, lit when low.
+  * the expander LEDs are on GP0..GP7, lit when low;
+  * the Air Quality 3 ADDR jumper is on 0x5a.
 * A missing click board does not fail the image self-test: its LEDs
   answer `GPIO` / `NO_DEVICE` errors, the board LEDs still work.
 
@@ -123,16 +129,55 @@ expander and bargraph LEDs are SPI writes, which cannot run in an ISR.
 * Errors: 2 `INVALID_LEVEL`, 3 `INVALID_MASK`, 4 `INVALID_BRIGHTNESS`,
   5 `NO_DEVICE`, 6 `IO`.
 
+## The air quality protocol (group 66)
+
+`include/airq_mgmt.h`, `src/airq_mgmt.c`, Zephyr `ams,ccs811` sensor
+driver (one measurement per second).
+
+| op    | command     | request | response |
+|-------|-------------|---------|----------|
+| read  | 0 `measure` | `{}`    | `{"eco2": 412, "tvoc": 3, "fresh": true}` |
+
+* `eco2` in ppm, `tvoc` in ppb. `fresh` is false when the sensor has no
+  new result since the previous read: the values are the previous ones.
+* The CCS811 gives eCO2 400 / TVOC 0 for about 20 s after power on, and
+  needs a 48 h burn-in for stable values. No temperature / humidity
+  compensation (the click has no such sensor).
+* Errors: 2 `NO_DEVICE` (driver init failed), 3 `IO`, 4 `INIT_PENDING`
+  (first seconds after boot).
+* The driver has `zephyr,deferred-init`: it starts
+  `CONFIG_APP_AIRQ_INIT_DELAY_MS` (2.5 s) after boot, when the USB log is
+  up. A failure is logged with an I2C probe and a hint. `device_init()`
+  runs once: reset the MCU to try again.
+* Command 1 `diag` (read): driver state and a raw I2C probe of 0x5a and
+  0x5b with nWAKE asserted (HW_ID, STATUS, ERROR_ID, app firmware
+  version):
+
+  ```sh
+  $C airq --diag
+  driver init: failed (-5), devicetree address 0x5a
+    0x5a: no answer
+    0x5b: hw_id 0x81, hw_version 0x12, status 0x10 (app valid, boot mode), …
+  => CCS811 at 0x5b but the devicetree says 0x5a: fix reg in boards/stm32f4_disco.overlay
+  ```
+
+  | result | cause |
+  |--------|-------|
+  | no answer at both | click not seated on mikroBUS 1, power, nWAKE (PB12), I2C pull-ups |
+  | answer at the other address | ADDR jumper: change `reg` (and the node name) in the overlay |
+  | `hw_id` ≠ 0x81 | not a CCS811 at this address |
+  | `status` bit 4 (APP_VALID) = 0 | the CCS811 has no application firmware |
+
 ## Logs
 
 The SMP UART carries only SMP frames, so the logs go to a second port:
 USB CDC ACM on the Discovery micro-USB OTG connector (`zephyr,console` in
 the overlay, `CONFIG_USB_DEVICE_STACK_NEXT` +
 `CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT` in `prj.conf`). Modules `app`,
-`led_ctrl`, `bargraph` log at the level chosen with
+`led_ctrl`, `bargraph`, `airq` log at the level chosen with
 `CONFIG_APP_LOG_LEVEL_INF=y` (info: boot, image confirmation, missing
 click boards, LED and bargraph changes) or `CONFIG_APP_LOG_LEVEL_DBG=y`
-(debug).
+(debug: also each air quality read).
 
 ```sh
 python -m serial.tools.miniterm /dev/ttyACM2 115200
@@ -154,7 +199,7 @@ Other ways to get logs, if the micro-USB is not usable:
 * **Command in an existing group:** add an ID to the group's command
   enum (e.g. `enum led_mgmt_cmd`) and a handler to its
   `mgmt_handler[]`. Raise the group's protocol version.
-* **New group:** copy the layout of `bargraph`. Add
+* **New group:** copy the layout of `airq` (the smallest group). Add
   the ID to `include/app_mgmt.h`, put the protocol in
   `include/<name>_mgmt.h` and the handlers in `src/<name>_mgmt.c`,
   registered with `MCUMGR_HANDLER_DEFINE`. Add the source to
@@ -241,6 +286,9 @@ $C bargraph level 7      # [#######...] segments 0..6
 $C bargraph mask 0x155 -b 30
 $C bargraph brightness 100
 $C bargraph get
+
+$C airq                  # eCO2   412 ppm   TVOC     1 ppb
+$C airq -w 2             # every 2 s, Ctrl-C to stop
 ```
 
 Check on the board: `led on 4` lights the first expander LED,

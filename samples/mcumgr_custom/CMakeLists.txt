@@ -14,3 +14,4 @@ target_sources(app PRIVATE
 # custom MCUmgr groups
 target_sources_ifdef(CONFIG_APP_LED_MGMT      app PRIVATE src/led_mgmt.c)
 target_sources_ifdef(CONFIG_APP_BARGRAPH_MGMT app PRIVATE src/bargraph_mgmt.c)
+target_sources_ifdef(CONFIG_APP_AIRQ_MGMT     app PRIVATE src/airq_mgmt.c)

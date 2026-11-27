@@ -23,6 +23,7 @@
  * log"). Logs never mix with the SMP frames.
  *
  * Click boards of this setup:
+ *   mikroBUS 1: Air Quality 3 click (CCS811, I2C1 @ 0x5a)
  *   mikroBUS 2: MCP23S08 GPIO expander (SPI2) driving 8 LEDs, active low
  *   mikroBUS 3: BarGraph click (MIKROE-1423): two 74HC595 (SPI3), 10 LED
  *               segments, PWM pin = output enable (brightness)
@@ -97,6 +98,36 @@
 			label = "bargraph /OE";
 		};
 	};
+};
+
+/*
+ * mikroBUS 1 and 2 I2C: I2C1 on PB8 (SCL) / PB7 (SDA). The board default is
+ * PB6 / PB9 for the CS43L22 audio codec, which is disconnected (disabled).
+ */
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb7>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	status = "okay";
+
+	/*
+	 * mikroBUS 1: Air Quality 3 click, ADDR jumper on 0x5a (0x5b if the
+	 * jumper is on 1: "smp_client.py airq diag" shows which one answers).
+	 * Deferred init: src/airq_mgmt.c initializes the driver about 2.5 s
+	 * after boot, when the USB log is up, and logs the result.
+	 */
+	ccs811: ccs811@5a {
+		compatible = "ams,ccs811";
+		reg = <0x5a>;
+		zephyr,deferred-init;
+		reset-gpios = <&gpioe 10 GPIO_ACTIVE_LOW>;	/* RST */
+		wake-gpios = <&gpiob 12 GPIO_ACTIVE_LOW>;	/* CS */
+		irq-gpios = <&gpioe 7 GPIO_ACTIVE_LOW>;		/* INT */
+	};
+};
+
+&audio_codec {
+	status = "disabled";
 };
 
 /* Discovery micro-USB OTG (CN5): console and logs */
