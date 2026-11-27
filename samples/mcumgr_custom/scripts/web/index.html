@@ -265,6 +265,7 @@ pre.diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, M
       <div class="sub">STM32F4DISCOVERY + MikroE shield · MCUmgr SMP</div>
     </div>
     <div class="chips">
+      <span class="chip" title="WebSocket to web_ui.py"><span class="dot" id="ws-dot"></span>Live</span>
       <span class="chip"><span class="dot" id="smp-dot"></span>SMP <b id="smp-port">–</b></span>
       <span class="chip"><span class="dot" id="log-dot"></span>Log <b id="log-port">–</b></span>
       <span class="chip" id="ver-chip" title="">image <b id="ver-image">–</b> · build <b id="ver-build">–</b></span>
@@ -432,7 +433,6 @@ const LD_COLOR_NAME = { LD3: "orange", LD4: "green", LD5: "red", LD6: "blue" };
 
 let clickMode = "toggle";
 let state = null;
-let smpWasUp = false;
 const history = { eco2: [], tvoc: [] };
 
 // ---------------------------------------------------------------- helpers
@@ -442,10 +442,49 @@ function toast(msg) {
   $("#toasts").appendChild(t);
   setTimeout(() => t.remove(), 4500);
 }
-async function api(path, body) {
-  const r = await fetch(path, body === undefined ? {} :
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  return r.json();
+// ---------------------------------------------------------------- WebSocket
+// one socket to web_ui.py: it pushes state / info / job / ports / log, the
+// page sends commands {id, type, ...} and gets {type: "reply", id, ok, ...}
+let ws = null, wsSeq = 0, wsRetry = 500, serverId = "";
+const wsPending = new Map();
+function call(type, body = {}) {
+  return new Promise((resolve) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return resolve({ ok: false, error: "web server not connected" });
+    const id = ++wsSeq;
+    const timer = setTimeout(() => { wsPending.delete(id); resolve({ ok: false, error: "no reply from the web server" }); }, 90000);
+    wsPending.set(id, (m) => { clearTimeout(timer); resolve(m); });
+    ws.send(JSON.stringify({ ...body, id, type }));
+  });
+}
+function wsConnect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws?since=${lastSeq}&server=${serverId}`);
+  ws.onopen = () => { wsRetry = 500; $("#ws-dot").className = "dot ok"; };
+  ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
+  ws.onclose = () => {
+    $("#ws-dot").className = "dot bad";
+    $("#smp-dot").className = "dot bad";
+    $("#smp-dot").parentElement.title = "web server not reachable";
+    for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) $(id).classList.add("dim");
+    for (const done of wsPending.values()) done({ ok: false, error: "web server disconnected" });
+    wsPending.clear();
+    setTimeout(wsConnect, wsRetry);
+    wsRetry = Math.min(5000, wsRetry * 2);
+  };
+}
+function onMessage(m) {
+  switch (m.type) {
+    case "hello":
+      if (serverId && m.server_id !== serverId) { lastSeq = 0; logSys("--- web server restarted ---"); }
+      serverId = m.server_id;
+      break;
+    case "state": applyState(m.state); break;
+    case "info": applyInfo(m.info); break;
+    case "job": onJob(m.job); break;
+    case "ports": renderPorts(m); break;
+    case "log": onLog(m); break;
+    case "reply": { const done = wsPending.get(m.id); if (done) { wsPending.delete(m.id); done(m); } break; }
+  }
 }
 function period() {
   const v = parseInt($("#period").value, 10);
@@ -471,9 +510,8 @@ function applyLedLook(el, led) {
 async function setLed(idx, mode, ms) {
   const body = { led: idx, mode };
   if (mode === "blink") body.period_ms = ms || period();
-  const r = await api("/api/led", body);
+  const r = await call("led", body);
   if (!r.ok) toast(`led ${idx}: ${r.error}`);
-  refresh();
 }
 function clickLed(led, el) {
   if (clickMode === "edit") return openEditor(led, el);
@@ -481,9 +519,8 @@ function clickLed(led, el) {
   return setLed(led.led, led.mode === "off" ? "on" : "off");
 }
 async function setBargraph(body) {
-  const r = await api("/api/bargraph", body);
+  const r = await call("bargraph", body);
   if (!r.ok) toast(`bargraph: ${r.error}`);
-  refresh();
 }
 
 // ---------------------------------------------------------------- render
@@ -676,19 +713,12 @@ function renderStatus(s) {
   for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) $(id).classList.toggle("dim", !up);
   if (s.busy) {
     for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) setCardError(id, "firmware update running…");
-    return;
   }
-  if (up && !smpWasUp) loadInfo();
-  smpWasUp = up;
 }
 
-// ---------------------------------------------------------------- polling
-let busy = false;
-async function refresh() {
-  if (busy) return;
-  busy = true;
-  try {
-    const s = await api("/api/state");
+// ---------------------------------------------------------------- state (pushed)
+function applyState(s) {
+  {
     state = s;
     renderStatus(s);
     const down = s.busy ? "firmware update running…" :
@@ -708,16 +738,10 @@ async function refresh() {
         s.airq_error + " · press “Diagnose sensor”");
       if (pendingInit) $("#aq-note").textContent = "sensor starting…";
     }
-  } catch (e) {
-    $("#smp-dot").className = "dot bad";
-    $("#smp-dot").parentElement.title = "web server not reachable";
-  } finally {
-    busy = false;
   }
 }
 
-async function loadInfo() {
-  const i = await api("/api/info");
+function applyInfo(i) {
   if (i.version) {
     $("#ver-image").textContent = i.version.image;
     $("#ver-build").textContent = i.version.build;
@@ -813,9 +837,8 @@ function renderPatterns(rsp) {
 async function runPattern(bankName, name, step_ms, width) {
   const body = { bank: bankName, pattern: name };
   if (name !== "off") Object.assign(body, { step_ms, width });
-  const r = await api("/api/pattern", body);
+  const r = await call("pattern", body);
   if (!r.ok) toast(`pattern ${bankName}: ${r.error}`);
-  refresh();
 }
 
 // ---------------------------------------------------------------- per-LED editor
@@ -922,14 +945,15 @@ function renderJob(j) {
   }
   ul.scrollTop = ul.scrollHeight;
 }
-async function pollJob() {
-  const j = await api("/api/firmware");
+let jobActive = false;
+function onJob(j) {
   renderJob(j);
-  if (j.active) return setTimeout(pollJob, 500);
+  if (j.active) { jobActive = true; $("#fw-start").disabled = true; return; }
+  if (jobActive) {          // just finished (the server pushes the new info)
+    jobActive = false;
+    if (j.ok === false) toast("update failed: " + (j.error || ""));
+  }
   $("#fw-start").disabled = !fwFile;
-  smpWasUp = false;   // reload version and slots
-  refresh();
-  if (j.ok === false) toast("update failed: " + (j.error || ""));
 }
 $("#fw-start").onclick = async () => {
   if (!fwFile) return;
@@ -939,8 +963,7 @@ $("#fw-start").onclick = async () => {
                         { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: fwFile.buf });
   const j = await r.json();
   if (!j.ok) { toast(j.error); $("#fw-start").disabled = false; return; }
-  renderJob(j.job);
-  pollJob();
+  onJob(j.job);             // progress then comes over the WebSocket
 };
 
 // ---------------------------------------------------------------- air quality diag
@@ -959,7 +982,7 @@ function airqHint(d) {
 $("#aq-diag").onclick = async () => {
   const out = $("#aq-diag-out");
   out.hidden = false; out.textContent = "probing…";
-  const r = await api("/api/airq/diag");
+  const r = await call("airq_diag");
   if (!r.ok) { out.textContent = "diag failed: " + r.error; return; }
   const d = r.rsp, hex = (v, n = 2) => "0x" + v.toString(16).padStart(n, "0");
   const lines = [`driver init: ${d.init} (${d.init_rc}), devicetree address ${hex(d.addr)}`];
@@ -994,21 +1017,16 @@ function flush() {
   pending.forEach(logLine); pending = [];
   if ($("#log-follow").checked) logBox.scrollTop = logBox.scrollHeight;
 }
-function startLog() {
-  const es = new EventSource("/api/log?since=" + lastSeq);
-  es.onmessage = (ev) => {
-    const m = JSON.parse(ev.data);
-    for (const l of m.lines) {
-      if (l.seq === 1 && lastSeq > 1) lastSeq = 0;   // web server restarted
-      if (l.seq <= lastSeq) continue;
-      lastSeq = l.seq;
-      pending.push(l);
-    }
-    if (!paused) flush();
-    $("#log-where").textContent = m.connected ? `USB CDC ACM ${m.port}` : "USB CDC ACM: not connected";
-  };
-  es.onerror = () => { es.close(); setTimeout(startLog, 2000); };
+function onLog(m) {
+  for (const l of m.lines) {
+    if (l.seq <= lastSeq) continue;     // already shown (backlog after a reconnect)
+    lastSeq = l.seq;
+    pending.push(l);
+  }
+  if (!paused) flush();
+  $("#log-where").textContent = m.connected ? `USB CDC ACM ${m.port}` : "USB CDC ACM: not connected";
 }
+function logSys(text) { pending.push({ level: "sys", text }); if (!paused) flush(); }
 document.querySelectorAll(".lvl").forEach((b) => b.onclick = () => {
   levels[b.dataset.lvl] = !levels[b.dataset.lvl];
   b.classList.toggle("off", !levels[b.dataset.lvl]);
@@ -1023,9 +1041,9 @@ $("#log-pause").onclick = () => {
 $("#log-clear").onclick = () => { logBox.innerHTML = ""; pending = []; };
 
 // ---------------------------------------------------------------- log port
-async function loadPorts() {
-  const r = await api("/api/ports");
+function renderPorts(r) {
   const sel = $("#logport-sel");
+  if (document.activeElement === sel) return;   // the user is choosing
   const cur = r.log.mode === "auto" ? "auto" : r.log.fixed_port;
   sel.innerHTML = "";
   const auto = new Option("auto: Zephyr USB CDC ACM (Discovery micro-USB)", "auto");
@@ -1043,11 +1061,12 @@ async function loadPorts() {
   $("#logport-baud-wrap").hidden = sel.value === "auto";
 }
 $("#logport-sel").onchange = (e) => { $("#logport-baud-wrap").hidden = e.target.value === "auto"; };
-$("#logport-scan").onclick = loadPorts;
+$("#logport-scan").onclick = () => call("ports");
 $("#logport-apply").onclick = async () => {
-  const r = await api("/api/logport", { port: $("#logport-sel").value, baud: +$("#logport-baud").value });
+  const sel = $("#logport-sel");
+  sel.blur();
+  const r = await call("logport", { port: sel.value, baud: +$("#logport-baud").value });
   if (!r.ok) toast("log port: " + r.error);
-  loadPorts();
 };
 
 // ---------------------------------------------------------------- controls
@@ -1059,37 +1078,29 @@ document.querySelectorAll("[data-all]").forEach((b) => b.onclick = async () => {
   if (!state || !state.leds) return;
   const prefix = b.dataset.all === "board" ? "User" : "exp";
   for (const l of bank(state.leds, prefix)) {
-    const r = await api("/api/led", { led: l.led, mode: b.dataset.mode });
+    const r = await call("led", { led: l.led, mode: b.dataset.mode });
     if (!r.ok) { toast(`led ${l.led}: ${r.error}`); break; }
   }
-  refresh();
 });
 $("#exp-invert").onclick = async () => {
   if (!state || !state.leds) return;
   for (const l of bank(state.leds, "exp")) {
-    await api("/api/led", { led: l.led, mode: l.mode === "off" ? "on" : "off" });
+    await call("led", { led: l.led, mode: l.mode === "off" ? "on" : "off" });
   }
-  refresh();
 };
 $("#bar-level-in").oninput = (e) => { $("#bar-level-v").textContent = e.target.value; };
 $("#bar-level-in").onchange = (e) => setBargraph({ level: +e.target.value });
 $("#bar-bright-in").oninput = (e) => { $("#bar-bright-v").textContent = e.target.value + " %"; };
 $("#bar-bright-in").onchange = (e) => setBargraph({ brightness: +e.target.value });
 $("#btn-reset").onclick = async () => {
-  const r = await api("/api/reset", {});
+  const r = await call("reset");
   if (!r.ok) toast("reset: " + r.error);
-  smpWasUp = false;
 };
 $("#btn-release").onclick = async () => {
-  await api("/api/smp", { connect: !!$("#btn-release").dataset.released });
-  refresh();
+  await call("smp", { connect: !!$("#btn-release").dataset.released });
 };
 
-startLog();
-loadPorts();
-api("/api/firmware").then((j) => { if (j.active) { renderJob(j); pollJob(); } });
-refresh();
-setInterval(refresh, 1000);
+wsConnect();
 </script>
 </body>
 </html>

@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """
 Web UI for the mcumgr_custom sample: board LEDs, MCP23S08 LEDs, BarGraph,
-Air Quality, and the Zephyr log.
+Air Quality, firmware update and the Zephyr log.
 
-  browser ──HTTP──▶ web_ui.py ──SMP──▶ /dev/ttyUSB0 (shield FT232RL, USART2)
-                        └──── log ◀──── /dev/ttyACM* (Discovery micro-USB, CDC ACM)
+  browser ◀─WebSocket─▶ web_ui.py ──SMP──▶ /dev/ttyUSB0 (shield FT232RL, USART2)
+                            └──── log ◀──── /dev/ttyACM* (Discovery micro-USB, CDC ACM)
+
+The page keeps one WebSocket (/ws): the server pushes the board state when
+it changes (one poller for all pages, only while a page is open), the log
+lines, the firmware update progress and the serial ports; the page sends its
+commands on it. The same commands exist as HTTP (/api/...) for scripts.
 
 Only needs pyserial (in the Zephyr venv), uses smp_client.py of this
 directory for SMP.
@@ -20,11 +25,14 @@ The SMP port is held while the UI runs: press "Release SMP port" in the UI
 """
 
 import argparse
+import base64
 import collections
 import hashlib
 import json
 import os
+import queue
 import re
+import socket
 import struct
 import sys
 import threading
@@ -134,13 +142,14 @@ def parse_image(data):
 
 
 class FirmwareJob(threading.Thread):
-    """One update at a time; the UI polls status()."""
+    """One update at a time; on_change(status) at each step and percent."""
 
     CHUNK = 512  # data bytes per upload request (fits the 1536 MTU)
 
-    def __init__(self, link, data, name, confirm):
+    def __init__(self, link, data, name, confirm, on_change=None):
         super().__init__(daemon=True)
         self.link, self.data, self.name, self.confirm = link, data, name, confirm
+        self.on_change = on_change or (lambda status: None)
         self.header = parse_image(data)
         self.lock = threading.Lock()
         self.st = {"active": True, "step": "upload", "progress": 0, "ok": None,
@@ -153,12 +162,16 @@ class FirmwareJob(threading.Thread):
 
     def _set(self, **kw):
         with self.lock:
+            if all(self.st.get(k) == v for k, v in kw.items()):
+                return
             self.st.update(kw)
+        self.on_change(self.status())
 
     def _step(self, text):
         with self.lock:
             self.st["steps"].append({"t": time.time(), "text": text})
-        Handler.log.system(f"[web ui] update: {text}")
+        Handler.app.log.system(f"[web ui] update: {text}")
+        self.on_change(self.status())
 
     def _req(self, *args, **kw):
         return self.link.request(*args, **kw)
@@ -361,6 +374,12 @@ class LogReader(threading.Thread):
         with self.cond:
             return [ln for ln in self.lines if ln["seq"] > seq]
 
+    def backlog_then(self, seq, fn):
+        """fn(lines after seq), with no line pushed in between: a WebSocket
+        client gets its backlog, then the live lines, in order."""
+        with self.cond:
+            fn([ln for ln in self.lines if ln["seq"] > seq])
+
     def wait(self, seq, timeout):
         with self.cond:
             self.cond.wait_for(lambda: self.seq > seq, timeout)
@@ -368,12 +387,314 @@ class LogReader(threading.Thread):
 
 
 # --------------------------------------------------------------------------
+# WebSocket (RFC 6455, the part a browser page needs: text frames, ping,
+# close; no extensions)
+
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+WS_MAX_FRAME = 1 << 20
+
+
+def ws_accept_key(key):
+    return base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+
+
+def ws_frame(opcode, payload):
+    """Server to client: final frame, not masked."""
+    n = len(payload)
+    if n < 126:
+        head = struct.pack("!BB", 0x80 | opcode, n)
+    elif n < 1 << 16:
+        head = struct.pack("!BBH", 0x80 | opcode, 126, n)
+    else:
+        head = struct.pack("!BBQ", 0x80 | opcode, 127, n)
+    return head + payload
+
+
+def ws_read_frame(rfile):
+    """(fin, opcode, payload) of one client frame; EOFError when closed."""
+    def exact(n):
+        b = rfile.read(n)
+        if len(b) < n:
+            raise EOFError
+        return b
+
+    b0, b1 = exact(2)
+    n = b1 & 0x7F
+    if n == 126:
+        n = struct.unpack("!H", exact(2))[0]
+    elif n == 127:
+        n = struct.unpack("!Q", exact(8))[0]
+    if n > WS_MAX_FRAME:
+        raise EOFError
+    mask = exact(4) if b1 & 0x80 else None
+    data = exact(n)
+    if mask and n:
+        m = (mask * (n // 4 + 1))[:n]
+        data = (int.from_bytes(data, "big") ^ int.from_bytes(m, "big")).to_bytes(n, "big")
+    return bool(b0 & 0x80), b0 & 0x0F, data
+
+
+class WsClient:
+    """One browser page. Sends go through a queue and a writer thread: a
+    slow page is dropped (queue full) instead of stalling the others."""
+
+    def __init__(self, sock):
+        self.sock = sock
+        self.q = queue.Queue(maxsize=2000)
+        self.alive = True
+        threading.Thread(target=self._writer, daemon=True).start()
+
+    def send_raw(self, frame):
+        if not self.alive:
+            return
+        try:
+            self.q.put_nowait(frame)
+        except queue.Full:
+            self.close()
+
+    def send(self, obj):
+        self.send_raw(ws_frame(0x1, json.dumps(jsonable(obj)).encode()))
+
+    def _writer(self):
+        while True:
+            frame = self.q.get()
+            if frame is None:
+                return
+            try:
+                self.sock.sendall(frame)
+            except OSError:
+                self.close()
+                return
+
+    def close(self):
+        if not self.alive:
+            return
+        self.alive = False
+        try:
+            self.q.put_nowait(None)
+        except queue.Full:
+            pass
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)   # unblocks the reader
+        except OSError:
+            pass
+
+
+class Hub:
+    def __init__(self):
+        self.clients = set()
+        self.lock = threading.Lock()
+
+    def add(self, c):
+        with self.lock:
+            self.clients.add(c)
+
+    def remove(self, c):
+        with self.lock:
+            self.clients.discard(c)
+
+    def count(self):
+        with self.lock:
+            return len(self.clients)
+
+    def broadcast(self, obj):
+        frame = ws_frame(0x1, json.dumps(jsonable(obj)).encode())
+        with self.lock:
+            clients = list(self.clients)
+        for c in clients:
+            c.send_raw(frame)
+
+
+# --------------------------------------------------------------------------
+# Board state, shared by the WebSocket pages and the HTTP API
+
+def smp_call(link, op, group, cmd, payload=None):
+    try:
+        return {"ok": True, "rsp": link.request(op, group, cmd, payload)}
+    except smp.SmpError as e:
+        return {"ok": False, "error": str(e)}
+
+
+class App:
+    def __init__(self, link, log, poll_s):
+        self.link, self.log = link, log
+        self.job = None
+        self.hub = Hub()
+        self.server_id = os.urandom(4).hex()   # the page resyncs the log after a restart
+        self.poll_s = poll_s
+        self.state = None
+        self.info = None
+        self.ports = None
+        self.kick_ev = threading.Event()
+        self.want_info = True
+
+    # ---- reads
+
+    def read_state(self):
+        link, log = self.link, self.log
+        out = {"smp": None, "log": {"connected": log.connected, "port": log.port}}
+        if self.job and self.job.is_alive():
+            # firmware update running: keep the SMP link for it
+            out.update(smp=link.status(), busy="firmware update",
+                       leds=None, leds_error=None)
+            return out
+        leds = smp_call(link, smp.OP_READ, smp.GRP_LED, smp.LED_STATE)
+        out["leds"] = leds["rsp"]["leds"] if leds["ok"] else None
+        out["leds_error"] = None if leds["ok"] else leds["error"]
+        if leds["ok"]:
+            for key, grp, cmd in (("bargraph", smp.GRP_BARGRAPH, smp.BARGRAPH_STATE),
+                                  ("airq", smp.GRP_AIRQ, smp.AIRQ_MEASURE),
+                                  ("patterns", smp.GRP_PATTERN, smp.PATTERN_STATE)):
+                r = smp_call(link, smp.OP_READ, grp, cmd)
+                out[key] = r.get("rsp")
+                out[key + "_error"] = r.get("error")
+        out["smp"] = link.status()
+        return out
+
+    def read_info(self):
+        out = {}
+        for key, args in (("version", (smp.GRP_LED, smp.LED_VERSION, None)),
+                          ("images", (smp.GRP_IMG, smp.IMG_STATE, None)),
+                          ("os", (smp.GRP_OS, smp.OS_INFO, {"format": "rvbi"}))):
+            r = smp_call(self.link, smp.OP_READ, *args)
+            out[key] = r.get("rsp")
+            if not r["ok"]:
+                out[key + "_error"] = r["error"]
+                if "timeout" in r["error"] or "port" in r["error"]:
+                    break
+        return out
+
+    def read_ports(self):
+        return {"ports": list_ports(self.link.port), "log": self.log.settings()}
+
+    def job_status(self):
+        return self.job.status() if self.job else {"active": False}
+
+    # ---- live updates
+
+    def kick(self, info=False):
+        """Read the board now (after a command) instead of at the next poll."""
+        if info:
+            self.want_info = True
+        self.kick_ev.set()
+
+    def poller(self):
+        was_up, ports_t = False, 0.0
+        while True:
+            self.kick_ev.wait(self.poll_s)
+            self.kick_ev.clear()
+            if not self.hub.count():
+                was_up = False          # next page: fresh info
+                continue
+            st = self.read_state()
+            up = bool(st.get("leds"))
+            if up and (self.want_info or not was_up):
+                self.want_info = False
+                self.info = self.read_info()
+                self.hub.broadcast({"type": "info", "info": self.info})
+            was_up = up
+            if st != self.state:
+                self.state = st
+                self.hub.broadcast({"type": "state", "state": st})
+            if time.time() - ports_t > 2:   # e.g. the log ttyACM appears
+                ports_t = time.time()
+                self.push_ports()
+
+    def push_ports(self, force=False):
+        ports = self.read_ports()
+        if force or ports != self.ports:
+            self.ports = ports
+            self.hub.broadcast({"type": "ports", **ports})
+        return ports
+
+    def log_pump(self):
+        seq = self.log.seq
+        while True:
+            lines = self.log.wait(seq, 15)
+            if lines:
+                seq = lines[-1]["seq"]
+                self.hub.broadcast(self.log_msg(lines))
+
+    def log_msg(self, lines):
+        return {"type": "log", "lines": lines, "connected": self.log.connected,
+                "port": self.log.port}
+
+    def on_job(self, status):
+        self.hub.broadcast({"type": "job", "job": status})
+        if not status.get("active"):
+            self.kick(info=True)        # new version and slots
+
+    def start(self):
+        for fn in (self.poller, self.log_pump):
+            threading.Thread(target=fn, daemon=True).start()
+
+    # ---- commands (WebSocket {"type": name, ...} and POST /api/<name>)
+
+    def command(self, name, req):
+        """-> (reply dict, HTTP status)"""
+        def write(grp, cmd, keys):
+            r = smp_call(self.link, smp.OP_WRITE, grp, cmd,
+                         {k: req[k] for k in keys if k in req})
+            self.kick()
+            return r, 200
+
+        if name == "led":
+            return write(smp.GRP_LED, smp.LED_STATE, ("led", "mode", "period_ms"))
+        if name == "bargraph":
+            return write(smp.GRP_BARGRAPH, smp.BARGRAPH_STATE, ("level", "mask", "brightness"))
+        if name == "pattern":
+            return write(smp.GRP_PATTERN, smp.PATTERN_STATE,
+                         ("bank", "pattern", "step_ms", "width"))
+        if name == "reset":
+            r = smp_call(self.link, smp.OP_WRITE, smp.GRP_OS, smp.OS_RESET)
+            self.kick(info=True)
+            return r, 200
+        if name == "smp":
+            if req.get("connect"):
+                self.link.connect()
+            else:
+                self.link.release()
+            self.kick(info=True)
+            return {"ok": True, "smp": self.link.status()}, 200
+        if name == "logport":
+            port = req.get("port") or "auto"
+            if port != "auto" and port == self.link.port and not self.link.released:
+                return {"ok": False, "error": f"{port} is the SMP port"}, 409
+            self.log.set_port(port, req.get("baud"))
+            self.push_ports(force=True)
+            return {"ok": True, "log": self.log.settings()}, 200
+        if name == "airq_diag":
+            return smp_call(self.link, smp.OP_READ, smp.GRP_AIRQ, smp.AIRQ_DIAG), 200
+        if name == "ports":
+            return {"ok": True, **self.push_ports(force=True)}, 200
+        if name == "info":
+            self.info = self.read_info()
+            return {"ok": True, "info": self.info}, 200
+        if name == "state":
+            return {"ok": True, "state": self.read_state()}, 200
+        return {"ok": False, "error": f"unknown command {name!r}"}, 404
+
+    def start_job(self, data, name, confirm):
+        if self.job and self.job.is_alive():
+            return {"ok": False, "error": "an update is already running"}, 409
+        if self.link.released:
+            return {"ok": False, "error": "SMP port released"}, 409
+        try:
+            job = FirmwareJob(self.link, data, name, confirm, self.on_job)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}, 400
+        self.job = job
+        job.start()
+        self.on_job(job.status())
+        self.kick()                     # pages: cards show "update running"
+        return {"ok": True, "job": job.status()}, 200
+
+
+# --------------------------------------------------------------------------
 # HTTP
 
 class Handler(BaseHTTPRequestHandler):
-    link: SmpLink = None
-    log: LogReader = None
-    job: FirmwareJob = None
+    app: App = None
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):  # quiet
@@ -398,6 +719,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -405,72 +727,100 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(n) or b"{}")
 
-    def _smp(self, op, group, cmd, payload=None):
-        try:
-            return {"ok": True, "rsp": self.link.request(op, group, cmd, payload)}
-        except smp.SmpError as e:
-            return {"ok": False, "error": str(e)}
-
     # ---- GET
 
     def do_GET(self):
+        app = self.app
         url = urlparse(self.path)
+        q = parse_qs(url.query)
         if url.path in ("/", "/index.html"):
             return self._file("index.html", "text/html; charset=utf-8")
+        if url.path == "/ws":
+            return self.websocket(q)
         if url.path == "/api/state":
-            return self._json(self.state())
+            return self._json(app.read_state())
         if url.path == "/api/info":
-            return self._json(self.info())
+            return self._json(app.read_info())
         if url.path == "/api/firmware":
-            return self._json(Handler.job.status() if Handler.job else {"active": False})
+            return self._json(app.job_status())
         if url.path == "/api/ports":
-            return self._json({"ports": list_ports(self.link.port),
-                               "log": self.log.settings()})
+            return self._json(app.read_ports())
         if url.path == "/api/airq/diag":
-            return self._json(self._smp(smp.OP_READ, smp.GRP_AIRQ, smp.AIRQ_DIAG))
+            return self._json(app.command("airq_diag", {})[0])
         if url.path == "/api/log":
-            since = int(parse_qs(url.query).get("since", ["0"])[0])
-            return self.log_stream(since)
+            return self.log_stream(int(q.get("since", ["0"])[0]))
         self.send_error(404)
 
-    def state(self):
-        out = {"smp": None, "log": {"connected": self.log.connected,
-                                    "port": self.log.port}}
-        if Handler.job and Handler.job.is_alive():
-            # firmware update running: keep the SMP link for it
-            out.update(smp=self.link.status(), busy="firmware update",
-                       leds=None, leds_error=None)
-            return out
-        leds = self._smp(smp.OP_READ, smp.GRP_LED, smp.LED_STATE)
-        out["leds"] = leds["rsp"]["leds"] if leds["ok"] else None
-        out["leds_error"] = None if leds["ok"] else leds["error"]
-        if leds["ok"]:
-            bar = self._smp(smp.OP_READ, smp.GRP_BARGRAPH, smp.BARGRAPH_STATE)
-            out["bargraph"] = bar.get("rsp")
-            out["bargraph_error"] = bar.get("error")
-            aq = self._smp(smp.OP_READ, smp.GRP_AIRQ, smp.AIRQ_MEASURE)
-            out["airq"] = aq.get("rsp")
-            out["airq_error"] = aq.get("error")
-            pt = self._smp(smp.OP_READ, smp.GRP_PATTERN, smp.PATTERN_STATE)
-            out["patterns"] = pt.get("rsp")
-            out["patterns_error"] = pt.get("error")
-        out["smp"] = self.link.status()
-        return out
+    def websocket(self, q):
+        app = self.app
+        key = self.headers.get("Sec-WebSocket-Key")
+        if "websocket" not in (self.headers.get("Upgrade") or "").lower() or not key:
+            self.send_error(400, "WebSocket upgrade expected")
+            return
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", ws_accept_key(key.strip()))
+        self.end_headers()
+        self.wfile.flush()
+        self.close_connection = True
 
-    def info(self):
-        out = {}
-        for key, args in (("version", (smp.GRP_LED, smp.LED_VERSION, None)),
-                          ("images", (smp.GRP_IMG, smp.IMG_STATE, None)),
-                          ("os", (smp.GRP_OS, smp.OS_INFO, {"format": "rvbi"}))):
-            r = self._smp(smp.OP_READ, *args)
-            out[key] = r.get("rsp")
-            if not r["ok"]:
-                out[key + "_error"] = r["error"]
-                if "timeout" in r["error"] or "port" in r["error"]:
+        client = WsClient(self.connection)
+        # the page passes the log position it has, valid for this server only
+        since = int(q.get("since", ["0"])[0]) if q.get("server", [""])[0] == app.server_id else 0
+        client.send({"type": "hello", "server_id": app.server_id, "poll_s": app.poll_s})
+        if app.state is not None:
+            client.send({"type": "state", "state": app.state})
+        if app.info is not None:
+            client.send({"type": "info", "info": app.info})
+        client.send({"type": "job", "job": app.job_status()})
+        client.send({"type": "ports", **(app.ports or app.read_ports())})
+
+        def join(lines):
+            client.send(app.log_msg(lines))
+            app.hub.add(client)
+        app.log.backlog_then(since, join)
+        app.kick(info=app.info is None)
+
+        parts = []
+        try:
+            while client.alive:
+                fin, op, data = ws_read_frame(self.rfile)
+                if op == 0x8:                       # close
+                    client.send_raw(ws_frame(0x8, data[:2]))
                     break
-        return out
+                if op == 0x9:                       # ping
+                    client.send_raw(ws_frame(0xA, data))
+                    continue
+                if op in (0x1, 0x2, 0x0):
+                    parts.append(data)
+                    if not fin:
+                        continue
+                    msg, parts = b"".join(parts), []
+                    self.ws_message(client, msg)
+        except (EOFError, OSError):
+            pass
+        finally:
+            app.hub.remove(client)
+            client.close()
+
+    def ws_message(self, client, raw):
+        try:
+            m = json.loads(raw)
+            name = m.pop("type")
+        except (ValueError, KeyError, AttributeError):
+            client.send({"type": "reply", "id": None, "ok": False, "error": "bad message"})
+            return
+        mid = m.pop("id", None)
+        # commands run in their own thread: a slow SMP answer does not hold
+        # the reading of the next frames (ping, close)
+        def run():
+            rsp, _status = self.app.command(name, m)
+            client.send({"type": "reply", "id": mid, **rsp})
+        threading.Thread(target=run, daemon=True).start()
 
     def log_stream(self, since):
+        log = self.app.log
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
@@ -479,14 +829,14 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         seq = since
         try:
-            backlog = self.log.since(seq)
+            backlog = log.since(seq)
             while True:
-                lines = backlog or self.log.wait(seq, 15)
+                lines = backlog or log.wait(seq, 15)
                 backlog = None
                 if lines:
                     seq = lines[-1]["seq"]
-                    msg = json.dumps({"lines": lines, "connected": self.log.connected,
-                                      "port": self.log.port})
+                    msg = json.dumps({"lines": lines, "connected": log.connected,
+                                      "port": log.port})
                     self.wfile.write(f"id: {seq}\ndata: {msg}\n\n".encode())
                 else:
                     self.wfile.write(b": ping\n\n")
@@ -504,56 +854,20 @@ class Handler(BaseHTTPRequestHandler):
             req = self._body()
         except ValueError:
             return self._json({"ok": False, "error": "bad JSON"}, 400)
+        if not url.path.startswith("/api/"):
+            return self.send_error(404)
+        rsp, status = self.app.command(url.path[len("/api/"):], req)
+        return self._json(rsp, status)
 
-        if url.path == "/api/led":
-            keys = {k: req[k] for k in ("led", "mode", "period_ms") if k in req}
-            return self._json(self._smp(smp.OP_WRITE, smp.GRP_LED, smp.LED_STATE, keys))
-        if url.path == "/api/bargraph":
-            keys = {k: req[k] for k in ("level", "mask", "brightness") if k in req}
-            return self._json(self._smp(smp.OP_WRITE, smp.GRP_BARGRAPH,
-                                        smp.BARGRAPH_STATE, keys))
-        if url.path == "/api/pattern":
-            keys = {k: req[k] for k in ("bank", "pattern", "step_ms", "width") if k in req}
-            return self._json(self._smp(smp.OP_WRITE, smp.GRP_PATTERN,
-                                        smp.PATTERN_STATE, keys))
-        if url.path == "/api/logport":
-            port = req.get("port") or "auto"
-            if port != "auto" and port == self.link.port and not self.link.released:
-                return self._json({"ok": False, "error": f"{port} is the SMP port"}, 409)
-            self.log.set_port(port, req.get("baud"))
-            return self._json({"ok": True, "log": self.log.settings()})
-        if url.path == "/api/reset":
-            return self._json(self._smp(smp.OP_WRITE, smp.GRP_OS, smp.OS_RESET))
-        if url.path == "/api/smp":
-            if req.get("connect"):
-                self.link.connect()
-            else:
-                self.link.release()
-            return self._json({"ok": True, "smp": self.link.status()})
-        self.send_error(404)
-
-
-def _firmware_upload(self, url):
-    q = parse_qs(url.query)
-    n = int(self.headers.get("Content-Length") or 0)
-    if n <= 0 or n > 1024 * 1024:
-        return self._json({"ok": False, "error": "send the image as the request body"}, 400)
-    data = self.rfile.read(n)
-    if Handler.job and Handler.job.is_alive():
-        return self._json({"ok": False, "error": "an update is already running"}, 409)
-    if self.link.released:
-        return self._json({"ok": False, "error": "SMP port released"}, 409)
-    try:
-        job = FirmwareJob(self.link, data, q.get("name", ["image.bin"])[0],
-                          q.get("confirm", ["mcu"])[0])
-    except ValueError as e:
-        return self._json({"ok": False, "error": str(e)}, 400)
-    Handler.job = job
-    job.start()
-    return self._json({"ok": True, "job": job.status()})
-
-
-Handler.firmware_upload = _firmware_upload
+    def firmware_upload(self, url):
+        q = parse_qs(url.query)
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > 1024 * 1024:
+            return self._json({"ok": False, "error": "send the image as the request body"}, 400)
+        data = self.rfile.read(n)
+        rsp, status = self.app.start_job(data, q.get("name", ["image.bin"])[0],
+                                         q.get("confirm", ["mcu"])[0])
+        return self._json(rsp, status)
 
 
 def main():
@@ -567,12 +881,16 @@ def main():
     p.add_argument("--log-baud", type=int, default=115200,
                    help="log port baud rate, for a UART (ignored by USB CDC ACM)")
     p.add_argument("--http", default="127.0.0.1:8000", help="listen address")
+    p.add_argument("--poll", type=float, default=1.0,
+                   help="board state poll period in s while a page is open "
+                   "(commands are shown at once)")
     a = p.parse_args()
 
     host, _, port = a.http.rpartition(":")
-    Handler.link = SmpLink(a.port, a.baud)
-    Handler.log = LogReader(a.log_port, a.log_baud)
-    Handler.log.start()
+    log = LogReader(a.log_port, a.log_baud)
+    log.start()
+    Handler.app = App(SmpLink(a.port, a.baud), log, max(0.2, a.poll))
+    Handler.app.start()
 
     srv = ThreadingHTTPServer((host or "127.0.0.1", int(port)), Handler)
     srv.daemon_threads = True

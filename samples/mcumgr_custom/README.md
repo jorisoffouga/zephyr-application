@@ -236,11 +236,26 @@ Other ways to get logs, if the micro-USB is not usable:
 ## Web UI
 
 `scripts/web_ui.py` is a local web server (Python standard library +
-pyserial). It drives the board over SMP and streams the log port:
+pyserial). It drives the board over SMP and streams the log port. The
+page keeps one WebSocket to it, so changes show up without reloading:
 
 ```sh
 python $APP/scripts/web_ui.py               # http://127.0.0.1:8000
 python $APP/scripts/web_ui.py -p /dev/ttyUSB0 --log-port /dev/ttyACM2 --http 0.0.0.0:8000
+python $APP/scripts/web_ui.py --poll 0.5    # read the board twice a second
+```
+
+```
+ page ◀── WebSocket /ws ──▶ web_ui.py ── SMP ──▶ /dev/ttyUSB0
+        server pushes:          │
+          state  (when it changes, one poller for all pages)
+          log    (each line)    └── log ◀── /dev/ttyACM* (CDC ACM)
+          job    (firmware update steps and %)
+          info   (version, slots: at connect, after an update or reset)
+          ports  (serial ports, when one appears or goes)
+        page sends: {"id": 1, "type": "led", "led": 4, "mode": "on"}
+        server replies {"type": "reply", "id": 1, "ok": true, ...}
+          and reads the board at once: every open page shows the change
 ```
 
 * **Discovery LEDs**: LD3..LD6 placed as on the board.
@@ -270,13 +285,29 @@ python $APP/scripts/web_ui.py -p /dev/ttyUSB0 --log-port /dev/ttyACM2 --http 0.0
   their period under them.
 * **Patterns**: each LED card has a pattern bar (pattern, step ms,
   width, Run / Stop). The firmware runs the pattern; the page animates
-  the same algorithm at the same step, since a 1 Hz poll would only show
-  random frames.
+  the same algorithm at the same step, since the state is read once a
+  second and would only show random frames.
 
-The page polls the state once a second (one `led get`, one `bargraph`,
-`airq` and `pattern` read each). The server holds `/dev/ttyUSB0`: press **Release
-SMP port** before running SWUpdate on it, then **Connect SMP port**.
-**Reset MCU** sends the OS reset; the log shows the boot.
+While a page is open the server reads the board every `--poll` seconds
+(default 1: one `led get`, one `bargraph`, `airq` and `pattern` read) and
+right after each command; with no page open it does not use SMP. The
+**Live** dot shows the WebSocket; the page reconnects by itself (web
+server restarted, laptop resumed) and gets the log lines it missed.
+
+The commands also exist as HTTP for scripts, same names and fields:
+`POST /api/led|bargraph|pattern|logport|reset|smp|ports|info|state` with a
+JSON body, `GET /api/state|info|ports|firmware|airq/diag`, `GET /api/log`
+(Server-Sent Events), `POST /api/firmware?name=…&confirm=mcu|host` with the
+image as the body:
+
+```sh
+curl -s -X POST -d '{"bank":"bargraph","pattern":"k2000","step_ms":70,"width":2}' \
+     http://127.0.0.1:8000/api/pattern
+```
+
+The server holds `/dev/ttyUSB0`: press **Release SMP port** before
+running SWUpdate on it, then **Connect SMP port**. **Reset MCU** sends
+the OS reset; the log shows the boot.
 
 ## Adding a group or a command
 
