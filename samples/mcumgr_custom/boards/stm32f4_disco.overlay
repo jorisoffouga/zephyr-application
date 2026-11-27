@@ -130,6 +130,11 @@
 	status = "disabled";
 };
 
+/* same peripheral as SPI3 (BarGraph), at the same address */
+&i2s3 {
+	status = "disabled";
+};
+
 /* Discovery micro-USB OTG (CN5): console and logs */
 &zephyr_udc0 {
 	cdc_acm_log: cdc_acm_log {
