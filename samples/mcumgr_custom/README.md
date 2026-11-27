@@ -7,8 +7,8 @@ Discovery Shield. One UART carries MCUmgr SMP for:
   OS group (echo, reset, info), with MCUboot test / confirm / rollback;
 * **custom groups**: the application's own commands, from group 64
   (`MGMT_GROUP_ID_PERUSER`), IDs in `include/app_mgmt.h`:
-  * 64 `led`: the LEDs (board, MCP23S08 expander, bargraph if fitted)
-    on, off, blinking, and the application version;
+  * 64 `led`: the 22 LEDs (board, MCP23S08 expander, bargraph) on, off,
+    blinking, and the application version;
   * 65 `bargraph`: BarGraph click level / mask / PWM brightness;
   * 66 `airq`: Air Quality 3 click eCO2 and TVOC;
   * 67 `pattern`: LED patterns run by the firmware (K2000 scanner,
@@ -31,10 +31,11 @@ existing group. See "Adding a group or a command" below.
  │   image upload / list / test │ /dev/ttyUSB0│  ├ group 1  img       upload, state  │
  │ swupdate (mcumgr handler)    │             │  ├ group 64 led       ── board LEDs  │
  └──────────────────────────────┘             │  │                    ── SPI2 MCP23S08 (mikroBUS 2)
+                                              │  ├ group 65 bargraph  ── SPI3 74HC595 + TIM3 PWM (mikroBUS 4)
                                               │  ├ group 66 airq      ── I2C3 CCS811 (mikroBUS 3)
                                               │  ├ group 67 pattern   ── LED patterns, any bank
                                               │  └ group 69 eeprom    ── I2C1 24C08 (mikroBUS 1)
-                                              │    (65 bargraph, 68 alcohol: other click overlays)
+                                              │    (68 alcohol: boards/clicks overlay)
                                               │ MCUboot: slot0 / slot1 / scratch     │
                                               └──────────────────────────────────────┘
 ```
@@ -66,18 +67,16 @@ an upload in progress: requests are handled one at a time.
 | 1        | EEPROM click (MIKROE-1200): ST 24C08, 1 KiB | I2C1 PB8 SCL / PB7 SDA, 0x50..0x53 | WP = PWM PA1 |
 | 2        | MCP23S08 expander, 8 LEDs active low | SPI2 PB13/14/15, CS PE14 | (RST PE12, INT PE8 not used) |
 | 3        | Air Quality 3 (CCS811)         | I2C3 PA8 SCL / PC9 SDA, 0x5a | RST PE4, WAKE = CS PE5, INT PD2 |
+| 4        | BarGraph click (MIKROE-1423)   | SPI3 PB3/4/5, CS PD7 = latch | RST PD6 = /MR, PWM PC8 TIM3_CH3 = enable |
 
 Other click boards are kept as extra overlays in `boards/clicks/`, each
 replacing the click of its slot (their groups come back with them):
 
 | overlay | click board | replaces |
 |---------|-------------|----------|
-| `bargraph_slot3.overlay` | BarGraph click (MIKROE-1423): SPI3 PB3/4/5, CS PE5 = latch, RST PE4 = /MR, PWM PB1 TIM3_CH4 = enable | Air Quality 3 |
 | `alcohol_slot1.overlay` + `alcohol_slot1.conf` | Alcohol click (MIKROE-1586, MQ-3): AN PC1 = ADC1 IN11 | EEPROM |
 
 ```sh
-west build -p -b stm32f4_disco --sysbuild -d $B-v1 $APP -- \
-  -DEXTRA_DTC_OVERLAY_FILE=boards/clicks/bargraph_slot3.overlay
 west build -p -b stm32f4_disco --sysbuild -d $B-v1 $APP -- \
   -DEXTRA_DTC_OVERLAY_FILE=boards/clicks/alcohol_slot1.overlay \
   -DEXTRA_CONF_FILE=boards/clicks/alcohol_slot1.conf
@@ -123,7 +122,7 @@ Defined in `include/led_mgmt.h`, implemented in `src/led_mgmt.c`
 |--------|------------------------------------|--------------|
 | 0..3   | board: green, orange, red, blue    | `User LD4` … |
 | 4..11  | MCP23S08 GP0..GP7 (mikroBUS 2)     | `exp0`..`exp7` |
-| 12..21 | BarGraph segments, with `bargraph_slot3.overlay` | `bar0`..`bar9` |
+| 12..21 | BarGraph segments (mikroBUS 4)     | `bar0`..`bar9` |
 
 The blinking runs from a work queue (`led_wq`), not from timer ISRs: the
 expander and bargraph LEDs are SPI writes, which cannot run in an ISR.
@@ -132,7 +131,7 @@ expander and bargraph LEDs are SPI writes, which cannot run in an ISR.
 |-------|-----------|--------------------------------------------------------|----------|
 | read  | 0 `state` | `{}`                                                   | `{"leds": [{"led": 0, "name": "User LD4", "mode": "blink", "period_ms": 1000}, …]}` |
 | write | 0 `state` | `{"led": 2, "mode": "on" \| "off" \| "blink", "period_ms": 100}` | `{"led": 2, "name": "User LD5", "mode": "blink", "period_ms": 100}` |
-| read  | 1 `version` | `{}`                                                 | `{"protocol": 2, "image": "2.0.0+0", "build": "fafb169561d8", "leds": 12}` |
+| read  | 1 `version` | `{}`                                                 | `{"protocol": 2, "image": "2.0.0+0", "build": "fafb169561d8", "leds": 22}` |
 
 * `version`: `protocol` is `LED_MGMT_PROTOCOL_VERSION`, raised when a
   command is added or changed, so a host can check what the firmware
@@ -365,7 +364,7 @@ python $APP/scripts/web_ui.py --poll 0.5    # read the board twice a second
 * **Discovery LEDs**: LD3..LD6 placed as on the board.
 * **MCP23S08**: GP0..GP7, the port value (LEDs lit and pin levels,
   active low), all on / all off / invert.
-* **BarGraph** (with its overlay): click a segment to toggle it, level
+* **BarGraph**: click a segment to toggle it, level
   and brightness sliders, the level (or "custom" for a non-contiguous
   mask).
 * **EEPROM**: the settings state (stored, restored at boot, saves,
@@ -508,9 +507,13 @@ $C led on 7              # error: group 64 error 2 (INVALID_LED)
 ### Click boards
 
 ```sh
-$C led get               # 12 LEDs: User LD3..6, exp0..7
+$C led get               # 22 LEDs: User LD3..6, exp0..7, bar0..9
 $C led on 4              # exp0 on (expander pin low)
 $C led blink 11 -t 200   # exp7 blinks
+$C led blink 21 -t 100   # bar9 blinks
+
+$C bargraph level 7      # [#######...] segments 0..6
+$C bargraph mask 0x155 -b 30
 
 $C airq                  # eCO2   412 ppm   TVOC     1 ppb
 $C airq -w 2             # every 2 s, Ctrl-C to stop
@@ -530,17 +533,14 @@ $C eeprom store          # ..., restored at boot
 $C eeprom store clear    # next boot: LEDs off
 $C eeprom store autosave-off | autosave-on | save | restore
 
-# with boards/clicks/bargraph_slot3.overlay
-$C bargraph level 7      # [#######...] segments 0..6
-$C bargraph mask 0x155 -b 30
-
 # with boards/clicks/alcohol_slot1.overlay
 $C alcohol               # AN   654 mV  (raw  812 / full scale 3300 mV)
 $C alcohol --calibrate   # in clean air: baseline = now
 ```
 
 Check on the board: `led on 4` lights the first expander LED,
-`eeprom write 0 -t hello` then `eeprom read 0 16` shows `hello`. If not,
+`bargraph level 1` the first bargraph segment, `eeprom write 0 -t hello`
+then `eeprom read 0 16` shows `hello`. If not,
 fix the assumptions in `boards/stm32f4_disco.overlay` (see "Click
 boards").
 

@@ -27,19 +27,21 @@
  *               (one address per 256-byte block), WP = PWM pin PA1
  *   mikroBUS 2: MCP23S08 GPIO expander (SPI2) driving 8 LEDs, active low
  *   mikroBUS 3: Air Quality 3 click (CCS811), I2C3 @ 0x5a
+ *   mikroBUS 4: BarGraph click (MIKROE-1423): two 74HC595 (SPI3, CS PD7 =
+ *               latch, RST PD6 = /MR), 10 LED segments, PWM pin PC8
+ *               (TIM3_CH3) = output enable (brightness)
  *
  * Other click boards, as extra overlays (boards/clicks/, see README.md):
- *   bargraph_slot3.overlay  BarGraph click on mikroBUS 3 (instead of the
- *                           Air Quality 3 click)
  *   alcohol_slot1.overlay   Alcohol click on mikroBUS 1 (instead of the
  *                           EEPROM click), with alcohol_slot1.conf
  *
  * LED indexes of the "led" SMP group, in this order:
  *   0..3   board LEDs (led0..led3 aliases: green, orange, red, blue)
  *   4..11  expander_leds (exp0..exp7)
- *   then   bargraph_leds (bar0..bar9) with bargraph_slot3.overlay
+ *   12..21 bargraph_leds (bar0..bar9)
  */
 
+#include <zephyr/dt-bindings/pwm/pwm.h>
 #include "stm32f4_disco_partitions.dtsi"
 
 / {
@@ -70,6 +72,41 @@
 		exp-led-5 { gpios = <&mcp23s08 5 GPIO_ACTIVE_LOW>; label = "exp5"; };
 		exp-led-6 { gpios = <&mcp23s08 6 GPIO_ACTIVE_LOW>; label = "exp6"; };
 		exp-led-7 { gpios = <&mcp23s08 7 GPIO_ACTIVE_LOW>; label = "exp7"; };
+	};
+
+	/*
+	 * mikroBUS 4: BarGraph click segments on the 16 outputs of the two
+	 * chained 74HC595. Assumed: segment n on output n, lit when high. If
+	 * the segments light in the wrong order, change the pin numbers; if
+	 * inverted, use GPIO_ACTIVE_LOW.
+	 */
+	bargraph_leds: bargraph-leds {
+		compatible = "gpio-leds";
+
+		bar-0 { gpios = <&bargraph_sr 0 GPIO_ACTIVE_HIGH>; label = "bar0"; };
+		bar-1 { gpios = <&bargraph_sr 1 GPIO_ACTIVE_HIGH>; label = "bar1"; };
+		bar-2 { gpios = <&bargraph_sr 2 GPIO_ACTIVE_HIGH>; label = "bar2"; };
+		bar-3 { gpios = <&bargraph_sr 3 GPIO_ACTIVE_HIGH>; label = "bar3"; };
+		bar-4 { gpios = <&bargraph_sr 4 GPIO_ACTIVE_HIGH>; label = "bar4"; };
+		bar-5 { gpios = <&bargraph_sr 5 GPIO_ACTIVE_HIGH>; label = "bar5"; };
+		bar-6 { gpios = <&bargraph_sr 6 GPIO_ACTIVE_HIGH>; label = "bar6"; };
+		bar-7 { gpios = <&bargraph_sr 7 GPIO_ACTIVE_HIGH>; label = "bar7"; };
+		bar-8 { gpios = <&bargraph_sr 8 GPIO_ACTIVE_HIGH>; label = "bar8"; };
+		bar-9 { gpios = <&bargraph_sr 9 GPIO_ACTIVE_HIGH>; label = "bar9"; };
+	};
+
+	/*
+	 * mikroBUS 4 PWM pin: segment enable. Checked on the board (slot 3):
+	 * the segments are on while the pin is high (normal polarity), so the
+	 * pulse width is the time the segments are on (brightness).
+	 */
+	bargraph_pwm_leds {
+		compatible = "pwm-leds";
+
+		bargraph_oe: bargraph-oe {
+			pwms = <&bargraph_pwm 3 PWM_USEC(500) PWM_POLARITY_NORMAL>;
+			label = "bargraph /OE";
+		};
 	};
 };
 
@@ -162,5 +199,39 @@
 		ngpios = <8>;
 		/* if the expander RESET pin is wired to mikroBUS 2 RST: */
 		/* reset-gpios = <&gpioe 12 GPIO_ACTIVE_LOW>; */
+	};
+};
+
+/*
+ * mikroBUS 4: BarGraph click on SPI3 (shared with mikroBUS 3, whose click
+ * is on I2C), CS PD7 = 74HC595 latch (RCLK): the outputs update at the end
+ * of each transfer.
+ */
+&spi3 {
+	pinctrl-0 = <&spi3_sck_pb3 &spi3_miso_pb4 &spi3_mosi_pb5>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpiod 7 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	bargraph_sr: gpio@0 {
+		compatible = "ti,sn74hc595";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+		reset-gpios = <&gpiod 6 GPIO_ACTIVE_LOW>;	/* RST = /MR */
+	};
+};
+
+/* mikroBUS 4 PWM: TIM3_CH3 on PC8. TIM3 is 16 bit: 84 MHz / 84 = 1 MHz */
+&timers3 {
+	st,prescaler = <83>;
+	status = "okay";
+
+	bargraph_pwm: pwm {
+		pinctrl-0 = <&tim3_ch3_pc8>;
+		pinctrl-names = "default";
+		status = "okay";
 	};
 };

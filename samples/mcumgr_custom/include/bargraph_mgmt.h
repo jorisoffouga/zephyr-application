@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Custom MCUmgr group "bargraph": BarGraph click (MIKROE-1423) on
- * mikroBUS 3, 10 segments on two 74HC595, brightness by PWM.
+ * mikroBUS 4, 10 segments on two 74HC595, brightness by PWM.
  *
  * Group 65 (APP_MGMT_GROUP_BARGRAPH), command 0 "state":
  *

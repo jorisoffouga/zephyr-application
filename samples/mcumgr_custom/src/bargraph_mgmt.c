@@ -4,7 +4,7 @@
  * Custom MCUmgr group: BarGraph click. Protocol in include/bargraph_mgmt.h.
  *
  * The segments are the LEDs of the bargraph_leds bank of led_ctrl (one
- * state for both groups); the brightness is the PWM on the mikroBUS 3 PWM pin.
+ * state for both groups); the brightness is the PWM on the mikroBUS 4 PWM pin.
  */
 
 #include <errno.h>
