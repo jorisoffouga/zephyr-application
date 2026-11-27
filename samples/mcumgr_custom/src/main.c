@@ -10,6 +10,7 @@
  *   - 65 "bargraph" (src/bargraph_mgmt.c): BarGraph click level, mask,
  *     brightness
  *   - 66 "airq" (src/airq_mgmt.c): Air Quality 3 click eCO2 / TVOC
+ *   - 67 "pattern" (src/pattern_mgmt.c): LED patterns run by the firmware
  *
  * At boot LED 0 blinks at CONFIG_APP_BOOT_BLINK_MS, so the running image
  * is visible. If MCUboot started this image in test mode, the image runs

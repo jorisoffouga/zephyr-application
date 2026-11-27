@@ -21,6 +21,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct k_work_q;
+
 enum led_mode {
 	LED_MODE_OFF,
 	LED_MODE_ON,
@@ -60,6 +62,15 @@ const char *led_ctrl_name(size_t led);
  * @return 0, -EINVAL (index), -ERANGE (period), -ENODEV / -EIO (GPIO)
  */
 int led_ctrl_set(size_t led, enum led_mode mode, uint32_t period_ms);
+
+/** As led_ctrl_set, without the log line (patterns: one change per step). */
+int led_ctrl_set_quiet(size_t led, enum led_mode mode, uint32_t period_ms);
+
+/** Bank of an LED. 0 or -EINVAL. */
+int led_ctrl_led_bank(size_t led, enum led_bank *bank);
+
+/** Work queue of the LED blinking, also used by the patterns (pattern.c). */
+struct k_work_q *led_ctrl_workq(void);
 
 /** Reads one LED state. period_ms is 0 unless blinking. 0 or -EINVAL. */
 int led_ctrl_get(size_t led, enum led_mode *mode, uint32_t *period_ms);

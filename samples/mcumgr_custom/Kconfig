@@ -60,6 +60,18 @@ config APP_AIRQ_MGMT
 	  Air Quality 3 click (CCS811): eCO2 and TVOC, and an I2C diagnostic.
 	  See include/airq_mgmt.h.
 
+config APP_PATTERN_MGMT
+	bool "Custom MCUmgr group 67: pattern"
+	default y
+	depends on MCUMGR
+	# response: base map -> "banks" list -> one map per bank
+	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
+	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
+	help
+	  LED patterns run by the firmware (k2000, chase, fill, alternate,
+	  counter) on the board, expander or bargraph LEDs.
+	  See include/pattern_mgmt.h.
+
 config APP_AIRQ_INIT_DELAY_MS
 	int "Delay before the CCS811 driver init, in ms"
 	depends on APP_AIRQ_MGMT

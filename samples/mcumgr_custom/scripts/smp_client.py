@@ -10,6 +10,7 @@ framing, a small CBOR codec, and the commands of the sample:
   version                                         custom group 64
   bargraph  get | level N | mask M | brightness P custom group 65
   airq      [-w S] | --diag                       custom group 66
+  pattern   get | start BANK NAME [-t MS] [-w N] | stop BANK   custom group 67
   info   [-f FORMAT] | bootloader                 OS group
   echo   TEXT                                     OS group
   reset                                           OS group
@@ -131,12 +132,13 @@ def cbor_decode(data):
 
 OP_READ, OP_READ_RSP, OP_WRITE, OP_WRITE_RSP = 0, 1, 2, 3
 GRP_OS, GRP_IMG = 0, 1
-GRP_LED, GRP_BARGRAPH, GRP_AIRQ = 64, 65, 66  # include/app_mgmt.h
+GRP_LED, GRP_BARGRAPH, GRP_AIRQ, GRP_PATTERN = 64, 65, 66, 67  # include/app_mgmt.h
 OS_ECHO, OS_RESET, OS_INFO, OS_BOOTLOADER_INFO = 0, 5, 7, 8
 IMG_STATE, IMG_UPLOAD = 0, 1
 LED_STATE, LED_VERSION = 0, 1
 BARGRAPH_STATE = 0
 AIRQ_MEASURE, AIRQ_DIAG = 0, 1
+PATTERN_STATE = 0
 
 MCUBOOT_MODES = [  # enum mcuboot_mode, bootutil/boot_status.h
     "single slot", "swap using scratch", "upgrade only", "swap using move",
@@ -155,6 +157,7 @@ GROUP_ERR = {  # include/<group>_mgmt.h
     GRP_BARGRAPH: {1: "UNKNOWN", 2: "INVALID_LEVEL", 3: "INVALID_MASK",
                    4: "INVALID_BRIGHTNESS", 5: "NO_DEVICE", 6: "IO"},
     GRP_AIRQ: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INIT_PENDING"},
+    GRP_PATTERN: {1: "UNKNOWN", 2: "INVALID_BANK", 3: "INVALID_PATTERN", 4: "INVALID_STEP"},
 }
 
 
@@ -372,6 +375,25 @@ def cmd_airq(smp, a):
         time.sleep(a.watch)
 
 
+def show_pattern(b):
+    run = (f"{b['pattern']}, step {b['step_ms']} ms, width {b['width']}"
+           if b["pattern"] != "off" else "off")
+    print(f"{b['bank']:<9} ({b['leds']:>2} LEDs): {run}")
+
+
+def cmd_pattern(smp, a):
+    if a.action == "get":
+        rsp = smp.request(OP_READ, GRP_PATTERN, PATTERN_STATE)
+        print("patterns:", ", ".join(rsp["patterns"]))
+        for b in rsp["banks"]:
+            show_pattern(b)
+        return
+    req = {"bank": a.bank, "pattern": "off" if a.action == "stop" else a.name}
+    if a.action == "start":
+        req.update(step_ms=a.step, width=a.width)
+    show_pattern(smp.request(OP_WRITE, GRP_PATTERN, PATTERN_STATE, req))
+
+
 def cmd_version(smp, _a):
     """Custom group: protocol / image / build versions of the application."""
     rsp = smp.request(OP_READ, GRP_LED, LED_VERSION)
@@ -499,6 +521,16 @@ def main():
             sp.add_argument("-b", "--brightness", type=int,
                             help="also set the brightness (percent)")
 
+    pt = sub.add_parser("pattern", help="custom pattern group: LED patterns")
+    psub = pt.add_subparsers(dest="action", required=True)
+    psub.add_parser("get")
+    sp = psub.add_parser("start", help="e.g. start bargraph k2000 -t 60")
+    sp.add_argument("bank", choices=["board", "expander", "bargraph"])
+    sp.add_argument("name", choices=["k2000", "chase", "fill", "alternate", "counter"])
+    sp.add_argument("-t", "--step", type=int, default=100, help="ms per step (20..5000)")
+    sp.add_argument("-w", "--width", type=int, default=2, help="LEDs lit, k2000 / chase (1..4)")
+    psub.add_parser("stop").add_argument("bank", choices=["board", "expander", "bargraph"])
+
     aq = sub.add_parser("airq", help="custom airq group: eCO2 / TVOC")
     aq.add_argument("-w", "--watch", type=float, metavar="S",
                     help="read again every S seconds (Ctrl-C to stop)")
@@ -531,6 +563,7 @@ def main():
             "led": cmd_led,
             "bargraph": cmd_bargraph,
             "airq": cmd_airq,
+            "pattern": cmd_pattern,
             "version": cmd_version,
             "info": cmd_info,
             "bootloader": cmd_bootloader,

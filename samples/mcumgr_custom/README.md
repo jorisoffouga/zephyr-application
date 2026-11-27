@@ -10,9 +10,11 @@ Discovery Shield. One UART carries MCUmgr SMP for:
   * 64 `led`: the 22 LEDs (board, MCP23S08 expander, bargraph) on, off,
     blinking, and the application version;
   * 65 `bargraph`: BarGraph click level / mask / PWM brightness;
-  * 66 `airq`: Air Quality 3 click eCO2 and TVOC.
+  * 66 `airq`: Air Quality 3 click eCO2 and TVOC;
+  * 67 `pattern`: LED patterns run by the firmware (K2000 scanner,
+    chase, fill, alternate, counter) on any LED bank.
 
-To add a feature, add a group (next ID: 67) or a command to an
+To add a feature, add a group (next ID: 68) or a command to an
 existing group. See "Adding a group or a command" below.
 
 ```
@@ -24,7 +26,8 @@ existing group. See "Adding a group or a command" below.
  │ swupdate (mcumgr handler)    │             │  ├ group 64 led       ── board LEDs  │
  └──────────────────────────────┘             │  │                    ── SPI2 MCP23S08 (mikroBUS 2)
                                               │  ├ group 65 bargraph  ── SPI3 74HC595 + TIM3 PWM (mikroBUS 3)
-                                              │  └ group 66 airq      ── I2C1 CCS811 (mikroBUS 1)
+                                              │  ├ group 66 airq      ── I2C1 CCS811 (mikroBUS 1)
+                                              │  └ group 67 pattern   ── LED patterns, any bank
                                               │ MCUboot: slot0 / slot1 / scratch     │
                                               └──────────────────────────────────────┘
 ```
@@ -168,13 +171,49 @@ driver (one measurement per second).
   | `hw_id` ≠ 0x81 | not a CCS811 at this address |
   | `status` bit 4 (APP_VALID) = 0 | the CCS811 has no application firmware |
 
+## The pattern protocol (group 67)
+
+`include/pattern.h` (engine), `src/pattern.c`, `include/pattern_mgmt.h`,
+`src/pattern_mgmt.c`. The firmware runs the pattern on the LED work queue:
+it keeps running without any host.
+
+| op    | command   | request | response |
+|-------|-----------|---------|----------|
+| read  | 0 `state` | `{}`    | `{"patterns": ["off", "k2000", …], "banks": [{"bank": "bargraph", "leds": 10, "pattern": "k2000", "step_ms": 70, "width": 2}, …]}` |
+| write | 0 `state` | `{"bank": "bargraph", "pattern": "k2000", "step_ms": 70, "width": 2}` | the bank entry |
+
+| pattern     | effect |
+|-------------|--------|
+| `k2000`     | scanner going back and forth, `width` LEDs (head and tail) |
+| `chase`     | running light in one direction, `width` LEDs |
+| `fill`      | bar filling up then emptying |
+| `alternate` | even / odd LEDs in turn |
+| `counter`   | binary counter (nice on the 8 expander LEDs) |
+
+* Banks: `board` (4), `expander` (8), `bargraph` (10), each with its own
+  pattern. `step_ms` 20..5000 (default 100), `width` 1..4 (default 2).
+* `"pattern": "off"` stops it and switches the bank off. Setting an LED
+  of the bank (`led` group, or `bargraph` level / mask) stops the
+  pattern of that bank; the bargraph brightness does not.
+* Each step writes only the LEDs that change (one SPI transfer each on
+  the click boards), without a log line.
+* Errors: 2 `INVALID_BANK`, 3 `INVALID_PATTERN`, 4 `INVALID_STEP`.
+
+```sh
+$C pattern start bargraph k2000 -t 70 -w 2
+$C pattern start expander counter -t 200
+$C pattern start board chase -t 150 -w 1
+$C pattern get
+$C pattern stop bargraph
+```
+
 ## Logs
 
 The SMP UART carries only SMP frames, so the logs go to a second port:
 USB CDC ACM on the Discovery micro-USB OTG connector (`zephyr,console` in
 the overlay, `CONFIG_USB_DEVICE_STACK_NEXT` +
 `CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT` in `prj.conf`). Modules `app`,
-`led_ctrl`, `bargraph`, `airq` log at the level chosen with
+`led_ctrl`, `bargraph`, `airq`, `pattern` log at the level chosen with
 `CONFIG_APP_LOG_LEVEL_INF=y` (info: boot, image confirmation, missing
 click boards, LED and bargraph changes) or `CONFIG_APP_LOG_LEVEL_DBG=y`
 (debug: also each air quality read).

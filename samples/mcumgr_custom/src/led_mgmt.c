@@ -19,6 +19,7 @@
 #include <app_version.h>
 
 #include "led_ctrl.h"
+#include "pattern.h"
 #include "led_mgmt.h"
 
 /* version signed in the MCUboot header by imgtool */
@@ -120,6 +121,8 @@ static int led_mgmt_state_write(struct smp_streamer *ctxt)
 	} else if (mode_from_string(&mode_str, &mode) != 0) {
 		err = LED_MGMT_ERR_INVALID_MODE;
 	} else {
+		/* a manual change takes the LED back from a running pattern */
+		pattern_stop_led(led);
 		rc = led_ctrl_set(led, mode, period_ms);
 		switch (rc) {
 		case 0:

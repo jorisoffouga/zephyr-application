@@ -23,6 +23,7 @@
 
 #include "bargraph_mgmt.h"
 #include "led_ctrl.h"
+#include "pattern.h"
 
 LOG_MODULE_REGISTER(bargraph, CONFIG_APP_LOG_LEVEL);
 
@@ -143,6 +144,7 @@ static int bargraph_mgmt_state_write(struct smp_streamer *ctxt)
 	}
 
 	if (err == BARGRAPH_MGMT_ERR_OK && (has_level || has_mask)) {
+		pattern_stop(LED_BANK_BARGRAPH);
 		rc = write_mask(first, count, has_level ? BIT_MASK(level) : mask);
 		if (rc != 0) {
 			err = errno_to_err(rc);

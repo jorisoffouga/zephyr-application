@@ -212,6 +212,25 @@ int led_ctrl_set(size_t idx, enum led_mode mode, uint32_t period_ms)
 	return led_set(idx, mode, period_ms, true);
 }
 
+int led_ctrl_set_quiet(size_t idx, enum led_mode mode, uint32_t period_ms)
+{
+	return led_set(idx, mode, period_ms, false);
+}
+
+int led_ctrl_led_bank(size_t idx, enum led_bank *bank)
+{
+	if (idx >= ARRAY_SIZE(leds)) {
+		return -EINVAL;
+	}
+	*bank = leds[idx].bank;
+	return 0;
+}
+
+struct k_work_q *led_ctrl_workq(void)
+{
+	return &led_wq;
+}
+
 int led_ctrl_get(size_t idx, enum led_mode *mode, uint32_t *period_ms)
 {
 	if (idx >= ARRAY_SIZE(leds)) {

@@ -9,9 +9,11 @@ target_include_directories(app PRIVATE include)
 target_sources(app PRIVATE
   src/main.c
   src/led_ctrl.c
+  src/pattern.c
 )
 
 # custom MCUmgr groups
 target_sources_ifdef(CONFIG_APP_LED_MGMT      app PRIVATE src/led_mgmt.c)
 target_sources_ifdef(CONFIG_APP_BARGRAPH_MGMT app PRIVATE src/bargraph_mgmt.c)
 target_sources_ifdef(CONFIG_APP_AIRQ_MGMT     app PRIVATE src/airq_mgmt.c)
+target_sources_ifdef(CONFIG_APP_PATTERN_MGMT  app PRIVATE src/pattern_mgmt.c)
