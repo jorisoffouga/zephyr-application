@@ -98,6 +98,9 @@ config APP_STORE
 	bool "Keep the LED settings in the EEPROM"
 	default y
 	depends on EEPROM && CRC && $(dt_nodelabel_enabled,eeprom)
+	# save a pending change before an SMP reset
+	select MCUMGR_MGMT_NOTIFICATION_HOOKS if MCUMGR_GRP_OS
+	select MCUMGR_GRP_OS_RESET_HOOK if MCUMGR_GRP_OS
 	help
 	  LED modes and periods and the bank patterns are saved in the
 	  EEPROM click and restored at boot. See include/app_store.h.
@@ -113,6 +116,8 @@ config APP_STORE_OFFSET
 config APP_STORE_SIZE
 	int "EEPROM bytes reserved for the settings record"
 	default 256
+	help
+	  Two copies of the record, half each.
 
 config APP_STORE_AUTOSAVE
 	bool "Save the settings after each change made over SMP"

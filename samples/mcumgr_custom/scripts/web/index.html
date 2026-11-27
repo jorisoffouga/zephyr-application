@@ -434,7 +434,7 @@ button.danger.armed { background: var(--bad); color: #fff; border-color: var(--b
     </div>
     <div class="err"></div>
     <div class="hexwrap"><div class="hex" id="ee-hex"><span class="a">press “Read all”</span></div></div>
-    <div class="legend"><span><i></i>LED settings record (written by the firmware)</span><span>click a byte: its offset goes to the form</span><span id="ee-size"></span></div>
+    <div class="legend"><span><i></i>LED settings, two copies (written by the firmware)</span><span>click a byte: its offset goes to the form</span><span id="ee-size"></span></div>
   </section>
 
   <section class="card fw-card" id="card-fw">
@@ -791,6 +791,7 @@ function renderStore(st, err) {
   $("#ee-status").textContent = (st.valid ? "LED settings stored" : "no LED settings stored") +
     (st.restored ? " · restored at boot" : "") + (st.pending ? " · saving soon…" : "") +
     ` · ${st.saves} save${st.saves === 1 ? "" : "s"} since boot` +
+    (st.valid && st.seq !== undefined ? ` · copy ${st.slot} #${st.seq}` : "") +
     (st.last_rc ? ` · last EEPROM error ${st.last_rc} (write protect?)` : "");
   if (document.activeElement !== $("#ee-autosave")) $("#ee-autosave").checked = st.autosave;
 }

@@ -437,6 +437,7 @@ def show_store(st):
           f"{', restored at boot' if st['restored'] else ''}; autosave "
           f"{'on' if st['autosave'] else 'off'}{' (save pending)' if st['pending'] else ''}; "
           f"{st['saves']} saves since boot"
+          f"{', copy ' + str(st['slot']) + ' #' + str(st['seq']) if st['valid'] and 'seq' in st else ''}"
           f"{'' if not st['last_rc'] else ', last EEPROM error ' + str(st['last_rc'])}")
 
 

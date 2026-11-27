@@ -221,21 +221,25 @@ driver (one measurement per second).
 | read  | 1 `data`  | `{"off": 0, "len": 64}` (1..256) | `{"off": 0, "data": h'…'}` |
 | write | 1 `data`  | `{"off": 16, "data": h'48656c6c6f'}` (1..256 bytes) | `{"off": 16, "len": 5}` |
 | write | 2 `erase` | `{"off": 0, "len": 1024}` (optional: all) | `{"off": 0, "len": 1024}`, filled with 0xff |
-| read  | 3 `store` | `{}` | `{"ready": true, "valid": true, "restored": true, "autosave": true, "pending": false, "saves": 3, "last_rc": 0}` |
+| read  | 3 `store` | `{}` | `{"ready": true, "valid": true, "restored": true, "autosave": true, "pending": false, "slot": 1, "seq": 7, "saves": 3, "last_rc": 0}` |
 | write | 3 `store` | `{"action": "save" \| "restore" \| "clear"}` and/or `{"autosave": false}` | as read |
 
 * Writes and erases are read back and compared: 3 `IO` if they differ.
-* **LED settings:** one record at 0x300..0x3ff (`CONFIG_APP_STORE_OFFSET`,
-  the last block): mode and period of each LED, pattern of each bank,
-  with a CRC. It is written `CONFIG_APP_STORE_DELAY_MS` (2 s) after the
-  last change made over SMP (`led`, `bargraph`, `pattern` writes), only
-  if it differs from the stored one, and restored at boot. LED 0 is not
+* **LED settings:** two copies of a record at 0x300 and 0x380
+  (`CONFIG_APP_STORE_OFFSET`, the last block): mode and period of each
+  LED, pattern of each bank, a sequence number and a CRC. A save writes
+  the copy not in use and reads it back; the valid copy with the highest
+  sequence number is used, so a save cut by a reset or a power loss
+  leaves the previous settings. It is written `CONFIG_APP_STORE_DELAY_MS`
+  (2 s) after the last change made over SMP (`led`, `bargraph`, `pattern`
+  writes), only if it differs from the stored one, and at once when an
+  SMP reset comes while it waits (OS reset hook). Restored at boot. LED 0 is not
   restored (it blinks the image identity); a board pattern is. A record
   for another LED layout (other click boards) is not restored. Autosave
   off (`CONFIG_APP_STORE_AUTOSAVE=n` or `{"autosave": false}`, not
   kept across resets): only `save` writes it.
-* 0x000..0x2ff is free for your data. Writing into 0x300.. breaks the
-  record: the next boot does not restore it, the next save rewrites it.
+* 0x000..0x2ff is free for your data. Writing into 0x300.. breaks a
+  copy: the other one is used, the next save rewrites it.
 * Errors: 2 `NO_DEVICE` (click missing), 3 `IO`, 4 `INVALID_RANGE`,
   5 `INVALID_ACTION`, 6 `NO_RECORD` (restore without a valid record),
   7 `NO_STORE` (`CONFIG_APP_STORE=n`).

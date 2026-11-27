@@ -210,6 +210,8 @@ static int encode_store(zcbor_state_t *zse)
 		zcbor_tstr_put_lit(zse, "restored") && zcbor_bool_put(zse, st.restored) &&
 		zcbor_tstr_put_lit(zse, "autosave") && zcbor_bool_put(zse, st.autosave) &&
 		zcbor_tstr_put_lit(zse, "pending") && zcbor_bool_put(zse, st.pending) &&
+		zcbor_tstr_put_lit(zse, "slot") && zcbor_uint32_put(zse, st.slot) &&
+		zcbor_tstr_put_lit(zse, "seq") && zcbor_uint32_put(zse, st.seq) &&
 		zcbor_tstr_put_lit(zse, "saves") && zcbor_uint32_put(zse, st.saves) &&
 		zcbor_tstr_put_lit(zse, "last_rc") && zcbor_int32_put(zse, st.last_rc))
 		       ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;

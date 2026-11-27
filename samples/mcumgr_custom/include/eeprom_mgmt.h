@@ -25,7 +25,8 @@
  *
  * Command 3 "store": the LED settings record
  *   read   response {"ready": true, "valid": true, "restored": true,
- *                    "autosave": true, "pending": false, "saves": 3,
+ *                    "autosave": true, "pending": false, "slot": 1,
+ *                    "seq": 7, "saves": 3,
  *                    "last_rc": 0}
  *   write  request  {"action": "save" | "restore" | "clear"}
  *                   {"autosave": false}
