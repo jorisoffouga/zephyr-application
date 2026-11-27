@@ -7,20 +7,22 @@ Discovery Shield. One UART carries MCUmgr SMP for:
   OS group (echo, reset, info), with MCUboot test / confirm / rollback;
 * **custom groups**: the application's own commands, from group 64
   (`MGMT_GROUP_ID_PERUSER`), IDs in `include/app_mgmt.h`:
-  * 64 `led`: the board LEDs on, off, blinking, and the application
-    version.
+  * 64 `led`: the 22 LEDs (board, MCP23S08 expander, bargraph) on, off,
+    blinking, and the application version;
+  * 65 `bargraph`: BarGraph click level / mask / PWM brightness.
 
-To add a feature, add a group (next ID: 65) or a command to an
+To add a feature, add a group (next ID: 66) or a command to an
 existing group. See "Adding a group or a command" below.
 
 ```
  Linux host                                    STM32F4DISCOVERY + MikroE shield
  ┌──────────────────────────────┐  USB-UART   ┌──────────────────────────────────────┐
  │ scripts/smp_client.py        │  FT232RL    │ MCUmgr UART transport (USART2)       │
- │   led / version / info       │ ─── SMP ──▶ │  ├ group 0  os        echo, reset    │
+ │   led / bargraph / version   │ ─── SMP ──▶ │  ├ group 0  os        echo, reset    │
  │   image upload / list / test │ /dev/ttyUSB0│  ├ group 1  img       upload, state  │
- │ swupdate (mcumgr handler)    │             │  └ group 64 led       ── board LEDs  │
- └──────────────────────────────┘             │                                      │
+ │ swupdate (mcumgr handler)    │             │  ├ group 64 led       ── board LEDs  │
+ └──────────────────────────────┘             │  │                    ── SPI2 MCP23S08 (mikroBUS 2)
+                                              │  └ group 65 bargraph  ── SPI3 74HC595 + TIM3 PWM (mikroBUS 3)
                                               │ MCUboot: slot0 / slot1 / scratch     │
                                               └──────────────────────────────────────┘
 ```
@@ -45,6 +47,25 @@ an upload in progress: requests are handled one at a time.
 * LEDs: `led0`..`led3` aliases of the board = green LD4, orange LD3,
   red LD5, blue LD6.
 
+### Click boards
+
+| mikroBUS | click board                    | bus                          | other pins |
+|----------|--------------------------------|------------------------------|------------|
+| 2        | MCP23S08 expander, 8 LEDs active low | SPI2 PB13/14/15, CS PE14 | (RST PE12, INT PE8 not used) |
+| 3        | BarGraph click (MIKROE-1423)   | SPI3 PB3/4/5, CS PE5 = latch | RST PE4 = /MR, PWM PB1 TIM3_CH4 = enable|
+
+The full mikroBUS pinout of the shield, from its schematic, is in
+`boards/stm32f4_disco.overlay`. Notes:
+
+* The MCP23S08 is addressed with A1/A0 = 0 (the Zephyr driver sends
+  opcode 0x40 with HAEN off, so it works for any A1/A0 strap). Wire
+  mikroBUS 2 RST to the expander and uncomment `reset-gpios` if needed.
+* Unchecked assumptions about the hardware (the overlay says where to change them):
+  * the BarGraph segment n is on 74HC595 output n and lit when high;
+  * the expander LEDs are on GP0..GP7, lit when low.
+* A missing click board does not fail the image self-test: its LEDs
+  answer `GPIO` / `NO_DEVICE` errors, the board LEDs still work.
+
 udev rules and the `dialout` group: see `../mcumgr_update/README.md`.
 
 ## The LED protocol (group 64)
@@ -55,9 +76,11 @@ Defined in `include/led_mgmt.h`, implemented in `src/led_mgmt.c`
 | index  | LEDs                               | name         |
 |--------|------------------------------------|--------------|
 | 0..3   | board: green, orange, red, blue    | `User LD4` … |
+| 4..11  | MCP23S08 GP0..GP7 (mikroBUS 2)     | `exp0`..`exp7` |
+| 12..21 | BarGraph segments (mikroBUS 3)     | `bar0`..`bar9` |
 
-The blinking runs from a work queue (`led_wq`), not from timer ISRs, so
-LEDs behind SPI GPIO expanders can be added (devicetree `gpio-leds`).
+The blinking runs from a work queue (`led_wq`), not from timer ISRs: the
+expander and bargraph LEDs are SPI writes, which cannot run in an ISR.
 
 | op    | command   | request                                                | response |
 |-------|-----------|--------------------------------------------------------|----------|
@@ -79,6 +102,26 @@ LEDs behind SPI GPIO expanders can be added (devicetree `gpio-leds`).
   `rc` mapped by `led_mgmt_translate_error()`.
 * The LED state is in RAM. After a reset, LED 0 blinks at
   `CONFIG_APP_BOOT_BLINK_MS` and the others are off.
+* `led get` answers about 1 KiB of CBOR, hence
+  `CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE` / `_UART_MTU` = 1536 in `prj.conf`.
+
+## The bargraph protocol (group 65)
+
+`include/bargraph_mgmt.h`, `src/bargraph_mgmt.c`.
+
+| op    | command   | request                                          | response |
+|-------|-----------|--------------------------------------------------|----------|
+| read  | 0 `state` | `{}`                                             | `{"mask": 7, "segments": 10, "brightness": 100}` |
+| write | 0 `state` | `{"level": 3}` or `{"mask": 0x155}`, and/or `{"brightness": 40}` | as read |
+
+* `level` N lights segments 0..N-1; `mask` bit n is segment n; not both.
+  `brightness` 0..100 % is the PWM duty on the PWM pin (500 µs period,
+  high = segments on; polarity in the overlay).
+* The segments are LEDs 12..21 of the `led` group: one state for both
+  groups. A segment can blink from the `led` group; it counts as on in
+  `mask`.
+* Errors: 2 `INVALID_LEVEL`, 3 `INVALID_MASK`, 4 `INVALID_BRIGHTNESS`,
+  5 `NO_DEVICE`, 6 `IO`.
 
 ## Logs
 
@@ -86,9 +129,9 @@ The SMP UART carries only SMP frames, so the logs go to a second port:
 USB CDC ACM on the Discovery micro-USB OTG connector (`zephyr,console` in
 the overlay, `CONFIG_USB_DEVICE_STACK_NEXT` +
 `CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT` in `prj.conf`). Modules `app`,
-`led_ctrl` log at the level chosen with
-`CONFIG_APP_LOG_LEVEL_INF=y` (info: boot, image confirmation, LED
-changes) or `CONFIG_APP_LOG_LEVEL_DBG=y`
+`led_ctrl`, `bargraph` log at the level chosen with
+`CONFIG_APP_LOG_LEVEL_INF=y` (info: boot, image confirmation, missing
+click boards, LED and bargraph changes) or `CONFIG_APP_LOG_LEVEL_DBG=y`
 (debug).
 
 ```sh
@@ -111,7 +154,7 @@ Other ways to get logs, if the micro-USB is not usable:
 * **Command in an existing group:** add an ID to the group's command
   enum (e.g. `enum led_mgmt_cmd`) and a handler to its
   `mgmt_handler[]`. Raise the group's protocol version.
-* **New group:** copy the layout of the `led` group. Add
+* **New group:** copy the layout of `bargraph`. Add
   the ID to `include/app_mgmt.h`, put the protocol in
   `include/<name>_mgmt.h` and the handlers in `src/<name>_mgmt.c`,
   registered with `MCUMGR_HANDLER_DEFINE`. Add the source to
@@ -185,6 +228,24 @@ $C led on 7              # error: group 64 error 2 (INVALID_LED)
 ```
 
 `-v` prints every decoded response and the non-SMP lines (MCUboot log).
+
+### Click boards
+
+```sh
+$C led get               # 22 LEDs: User LD3..6, exp0..7, bar0..9
+$C led on 4              # exp0 on (expander pin low)
+$C led blink 11 -t 200   # exp7 blinks
+$C led blink 21 -t 100   # bar9 blinks
+
+$C bargraph level 7      # [#######...] segments 0..6
+$C bargraph mask 0x155 -b 30
+$C bargraph brightness 100
+$C bargraph get
+```
+
+Check on the board: `led on 4` lights the first expander LED,
+`bargraph level 1` the first bargraph segment. If not, fix the
+assumptions in `boards/stm32f4_disco.overlay` (see "Click boards").
 
 ### Versions
 

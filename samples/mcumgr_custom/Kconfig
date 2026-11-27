@@ -37,7 +37,17 @@ config APP_LED_MGMT
 	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
 	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
 	help
-	  Read and set the state of all the LEDs:
+	  Read and set the state of all the LEDs (board, expander, bargraph):
 	  on, off, blink. See include/led_mgmt.h.
+
+config APP_BARGRAPH_MGMT
+	bool "Custom MCUmgr group 65: bargraph"
+	default y
+	depends on MCUMGR && PWM && DT_HAS_TI_SN74HC595_ENABLED
+	depends on $(dt_nodelabel_enabled,bargraph_leds)
+	select MCUMGR_SMP_CBOR_MIN_DECODING_LEVEL_1
+	help
+	  BarGraph click: level, segment mask and PWM brightness.
+	  See include/bargraph_mgmt.h.
 
 source "Kconfig.zephyr"

@@ -8,6 +8,7 @@ framing, a small CBOR codec, and the commands of the sample:
 
   led       get | on N | off N | blink N [-t MS]  custom group 64
   version                                         custom group 64
+  bargraph  get | level N | mask M | brightness P custom group 65
   info   [-f FORMAT] | bootloader                 OS group
   echo   TEXT                                     OS group
   reset                                           OS group
@@ -129,10 +130,11 @@ def cbor_decode(data):
 
 OP_READ, OP_READ_RSP, OP_WRITE, OP_WRITE_RSP = 0, 1, 2, 3
 GRP_OS, GRP_IMG = 0, 1
-GRP_LED = 64  # include/app_mgmt.h
+GRP_LED, GRP_BARGRAPH = 64, 65  # include/app_mgmt.h
 OS_ECHO, OS_RESET, OS_INFO, OS_BOOTLOADER_INFO = 0, 5, 7, 8
 IMG_STATE, IMG_UPLOAD = 0, 1
 LED_STATE, LED_VERSION = 0, 1
+BARGRAPH_STATE = 0
 
 MCUBOOT_MODES = [  # enum mcuboot_mode, bootutil/boot_status.h
     "single slot", "swap using scratch", "upgrade only", "swap using move",
@@ -148,6 +150,8 @@ MGMT_ERR = {
 GROUP_ERR = {  # include/<group>_mgmt.h
     GRP_LED: {1: "UNKNOWN", 2: "INVALID_LED", 3: "INVALID_MODE",
               4: "INVALID_PERIOD", 5: "GPIO"},
+    GRP_BARGRAPH: {1: "UNKNOWN", 2: "INVALID_LEVEL", 3: "INVALID_MASK",
+                   4: "INVALID_BRIGHTNESS", 5: "NO_DEVICE", 6: "IO"},
 }
 
 
@@ -296,6 +300,28 @@ def cmd_led(smp, a):
     show_led(smp.request(OP_WRITE, GRP_LED, LED_STATE, req))
 
 
+def show_bargraph(rsp):
+    n, mask = rsp["segments"], rsp["mask"]
+    bar = "".join("#" if mask & (1 << i) else "." for i in range(n))
+    print(f"[{bar}] mask 0x{mask:03x}, brightness {rsp['brightness']} %")
+
+
+def cmd_bargraph(smp, a):
+    if a.action == "get":
+        show_bargraph(smp.request(OP_READ, GRP_BARGRAPH, BARGRAPH_STATE))
+        return
+    req = {}
+    if a.action == "level":
+        req["level"] = a.value
+    elif a.action == "mask":
+        req["mask"] = a.value
+    if a.action == "brightness":
+        req["brightness"] = a.value
+    elif a.brightness is not None:
+        req["brightness"] = a.brightness
+    show_bargraph(smp.request(OP_WRITE, GRP_BARGRAPH, BARGRAPH_STATE, req))
+
+
 def cmd_version(smp, _a):
     """Custom group: protocol / image / build versions of the application."""
     rsp = smp.request(OP_READ, GRP_LED, LED_VERSION)
@@ -411,6 +437,18 @@ def main():
             sp.add_argument("-t", "--period", type=int, default=500,
                             help="toggle interval in ms (default 500)")
 
+    bar = sub.add_parser("bargraph", help="custom bargraph group")
+    bsub = bar.add_subparsers(dest="action", required=True)
+    bsub.add_parser("get")
+    for action, hlp in (("level", "segments 0..N-1 on (0: all off)"),
+                        ("mask", "segment bit mask, e.g. 0x155"),
+                        ("brightness", "percent 0..100")):
+        sp = bsub.add_parser(action, help=hlp)
+        sp.add_argument("value", type=lambda v: int(v, 0))
+        if action != "brightness":
+            sp.add_argument("-b", "--brightness", type=int,
+                            help="also set the brightness (percent)")
+
     sub.add_parser("version", help="custom group: application versions")
     sub.add_parser("info", help="OS group: uname-like info").add_argument(
         "-f", "--format", default="a", help="format letters (default a: all)")
@@ -435,6 +473,7 @@ def main():
     try:
         commands = {
             "led": cmd_led,
+            "bargraph": cmd_bargraph,
             "version": cmd_version,
             "info": cmd_info,
             "bootloader": cmd_bootloader,

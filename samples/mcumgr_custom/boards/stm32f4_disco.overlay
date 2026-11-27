@@ -22,10 +22,18 @@
  * OTG connector (CN5, PA11/PA12), /dev/ttyACM* on the host ("mcumgr_custom
  * log"). Logs never mix with the SMP frames.
  *
- * LED indexes of the "led" SMP group: 0..3 board LEDs (led0..led3
- * aliases: green, orange, red, blue).
+ * Click boards of this setup:
+ *   mikroBUS 2: MCP23S08 GPIO expander (SPI2) driving 8 LEDs, active low
+ *   mikroBUS 3: BarGraph click (MIKROE-1423): two 74HC595 (SPI3), 10 LED
+ *               segments, PWM pin = output enable (brightness)
+ *
+ * LED indexes of the "led" SMP group, in this order:
+ *   0..3   board LEDs (led0..led3 aliases: green, orange, red, blue)
+ *   4..11  expander_leds (exp0..exp7)
+ *   12..21 bargraph_leds (bar0..bar9)
  */
 
+#include <zephyr/dt-bindings/pwm/pwm.h>
 #include "stm32f4_disco_partitions.dtsi"
 
 / {
@@ -35,11 +43,117 @@
 		zephyr,console = &cdc_acm_log;
 		zephyr,shell-uart = &cdc_acm_log;
 	};
+
+	/*
+	 * mikroBUS 2: one LED per MCP23S08 pin, lit when the pin is low.
+	 * Change GPIO_ACTIVE_LOW to GPIO_ACTIVE_HIGH if the board is wired
+	 * the other way.
+	 */
+	expander_leds: expander-leds {
+		compatible = "gpio-leds";
+
+		exp-led-0 { gpios = <&mcp23s08 0 GPIO_ACTIVE_LOW>; label = "exp0"; };
+		exp-led-1 { gpios = <&mcp23s08 1 GPIO_ACTIVE_LOW>; label = "exp1"; };
+		exp-led-2 { gpios = <&mcp23s08 2 GPIO_ACTIVE_LOW>; label = "exp2"; };
+		exp-led-3 { gpios = <&mcp23s08 3 GPIO_ACTIVE_LOW>; label = "exp3"; };
+		exp-led-4 { gpios = <&mcp23s08 4 GPIO_ACTIVE_LOW>; label = "exp4"; };
+		exp-led-5 { gpios = <&mcp23s08 5 GPIO_ACTIVE_LOW>; label = "exp5"; };
+		exp-led-6 { gpios = <&mcp23s08 6 GPIO_ACTIVE_LOW>; label = "exp6"; };
+		exp-led-7 { gpios = <&mcp23s08 7 GPIO_ACTIVE_LOW>; label = "exp7"; };
+	};
+
+	/*
+	 * mikroBUS 3: BarGraph click segments on the 16 outputs of the two
+	 * chained 74HC595. Assumed: segment n on output n, lit when high.
+	 * If the segments light in the wrong order, change the pin numbers
+	 * here; if they are inverted, use GPIO_ACTIVE_LOW.
+	 */
+	bargraph_leds: bargraph-leds {
+		compatible = "gpio-leds";
+
+		bar-0 { gpios = <&bargraph_sr 0 GPIO_ACTIVE_HIGH>; label = "bar0"; };
+		bar-1 { gpios = <&bargraph_sr 1 GPIO_ACTIVE_HIGH>; label = "bar1"; };
+		bar-2 { gpios = <&bargraph_sr 2 GPIO_ACTIVE_HIGH>; label = "bar2"; };
+		bar-3 { gpios = <&bargraph_sr 3 GPIO_ACTIVE_HIGH>; label = "bar3"; };
+		bar-4 { gpios = <&bargraph_sr 4 GPIO_ACTIVE_HIGH>; label = "bar4"; };
+		bar-5 { gpios = <&bargraph_sr 5 GPIO_ACTIVE_HIGH>; label = "bar5"; };
+		bar-6 { gpios = <&bargraph_sr 6 GPIO_ACTIVE_HIGH>; label = "bar6"; };
+		bar-7 { gpios = <&bargraph_sr 7 GPIO_ACTIVE_HIGH>; label = "bar7"; };
+		bar-8 { gpios = <&bargraph_sr 8 GPIO_ACTIVE_HIGH>; label = "bar8"; };
+		bar-9 { gpios = <&bargraph_sr 9 GPIO_ACTIVE_HIGH>; label = "bar9"; };
+	};
+
+	/*
+	 * mikroBUS 3 PWM pin: segment enable. Checked on the board: the
+	 * segments are on while the pin is high (normal polarity), so the
+	 * pulse width is the time the segments are on (brightness).
+	 * If 100 % gives the darkest bar, use PWM_POLARITY_INVERTED.
+	 */
+	bargraph_pwm_leds {
+		compatible = "pwm-leds";
+
+		bargraph_oe: bargraph-oe {
+			pwms = <&bargraph_pwm 4 PWM_USEC(500) PWM_POLARITY_NORMAL>;
+			label = "bargraph /OE";
+		};
+	};
 };
 
 /* Discovery micro-USB OTG (CN5): console and logs */
 &zephyr_udc0 {
 	cdc_acm_log: cdc_acm_log {
 		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+/* mikroBUS 2: MCP23S08 on SPI2, CS PE14 */
+&spi2 {
+	pinctrl-0 = <&spi2_sck_pb13 &spi2_miso_pb14 &spi2_mosi_pb15>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioe 14 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	mcp23s08: gpio@0 {
+		compatible = "microchip,mcp23s08";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <8>;
+		/* if the expander RESET pin is wired to mikroBUS 2 RST: */
+		/* reset-gpios = <&gpioe 12 GPIO_ACTIVE_LOW>; */
+	};
+};
+
+/*
+ * mikroBUS 3: BarGraph click on SPI3, CS PE5 = 74HC595 latch (RCLK): the
+ * outputs update on the rising edge at the end of each transfer.
+ */
+&spi3 {
+	pinctrl-0 = <&spi3_sck_pb3 &spi3_miso_pb4 &spi3_mosi_pb5>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioe 5 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	bargraph_sr: gpio@0 {
+		compatible = "ti,sn74hc595";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+		reset-gpios = <&gpioe 4 GPIO_ACTIVE_LOW>;	/* RST = /MR */
+	};
+};
+
+/* mikroBUS 3 PWM: TIM3_CH4 on PB1. TIM3 is 16 bit: 84 MHz / 84 = 1 MHz */
+&timers3 {
+	st,prescaler = <83>;
+	status = "okay";
+
+	bargraph_pwm: pwm {
+		pinctrl-0 = <&tim3_ch4_pb1>;
+		pinctrl-names = "default";
+		status = "okay";
 	};
 };

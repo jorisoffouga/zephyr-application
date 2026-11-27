@@ -5,8 +5,10 @@
  * - image group (upload / test / confirm) and OS group (echo / reset):
  *   firmware update with MCUboot rollback
  * - custom groups (IDs in include/app_mgmt.h):
- *   - 64 "led" (src/led_mgmt.c): board LEDs
+ *   - 64 "led" (src/led_mgmt.c): board, expander and bargraph LEDs
  *     on / off / blink, application version
+ *   - 65 "bargraph" (src/bargraph_mgmt.c): BarGraph click level, mask,
+ *     brightness
  *
  * At boot LED 0 blinks at CONFIG_APP_BOOT_BLINK_MS, so the running image
  * is visible. If MCUboot started this image in test mode, the image runs

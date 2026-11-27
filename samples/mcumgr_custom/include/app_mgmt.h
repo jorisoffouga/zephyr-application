@@ -15,5 +15,6 @@
 #include <zephyr/mgmt/mcumgr/mgmt/mgmt_defines.h>
 
 #define APP_MGMT_GROUP_LED	(MGMT_GROUP_ID_PERUSER + 0)	/* 64 */
+#define APP_MGMT_GROUP_BARGRAPH	(MGMT_GROUP_ID_PERUSER + 1)	/* 65 */
 
 #endif /* APP_MGMT_H_ */
