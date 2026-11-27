@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mcumgr_custom</title>
+<style>
+:root {
+  --bg: #f4f5f7; --surface: #ffffff; --surface-2: #eef0f3; --line: #dde1e6;
+  --text: #1b1f24; --muted: #5d6673; --accent: #2f6fdf;
+  --ok: #1f9d55; --warn: #c98a00; --bad: #d0362b; --off: #c9ced6;
+  --pcb: #1f3b2d; --pcb-line: #2f5a44; --chip: #23272e;
+  --seg-off: #3a2222; --seg-on: #ff3b30;
+  --led-green: #22c55e; --led-orange: #f59e0b; --led-red: #ef4444; --led-blue: #3b82f6;
+  --exp-on: #fbbf24;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216; --surface: #171b21; --surface-2: #1e232b; --line: #2a313b;
+    --text: #e6e9ee; --muted: #98a2b0; --accent: #6aa0ff;
+    --off: #3a414c; --shadow: none; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: 0 16px 32px;
+}
+.wrap { max-width: 1280px; margin: 0 auto; }
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+  padding: 18px 0 14px;
+}
+header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+header .sub { color: var(--muted); font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-items: center; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  font-size: 12px; color: var(--muted); white-space: nowrap;
+}
+.chip b { color: var(--text); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); flex: none; }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+button, .btn {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 5px 12px; }
+.seg button.on { background: var(--accent); color: #fff; }
+.toolbar label { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+input[type=number] {
+  width: 84px; font: inherit; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+}
+input[type=range] { accent-color: var(--accent); width: 100%; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px 16px 16px; box-shadow: var(--shadow); position: relative; min-width: 0;
+}
+.card h2 { font-size: 14px; margin: 0; }
+.card .where { color: var(--muted); font-size: 12px; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.card .err {
+  display: none; margin-top: 10px; padding: 6px 10px; border-radius: 8px; font-size: 12px;
+  background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad);
+}
+.card.has-err .err { display: block; }
+.card.dim .body { opacity: .4; pointer-events: none; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.kv { color: var(--muted); font-size: 12px; }
+.kv b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* LEDs */
+.led {
+  --c: var(--led-green); width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--c) 45%, var(--line));
+  background: color-mix(in srgb, var(--c) 14%, var(--surface-2));
+  cursor: pointer; padding: 0; position: relative; transition: box-shadow .12s, background .12s;
+}
+.led.lit {
+  background: radial-gradient(circle at 35% 35%, #fff 0 8%, var(--c) 30%);
+  box-shadow: 0 0 14px 3px color-mix(in srgb, var(--c) 70%, transparent);
+  border-color: var(--c);
+}
+.blinking { animation: blink calc(var(--period, 500ms) * 2) steps(1) infinite; }
+@keyframes blink { 0% { opacity: 1; } 50% { opacity: .15; } }
+.cap { font-size: 11px; color: var(--muted); text-align: center; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+/* Discovery: LD3 top, LD4 left, LD5 right, LD6 bottom, around the MEMS */
+.disco {
+  display: grid; grid-template-columns: repeat(3, 76px); grid-template-rows: repeat(3, 70px);
+  justify-content: center; align-items: center; justify-items: center;
+  background: var(--pcb); border-radius: 12px; padding: 10px; margin: 0 auto;
+  border: 1px solid var(--pcb-line); width: max-content;
+}
+.disco .cell { display: flex; flex-direction: column; align-items: center; }
+.disco .cap { color: #b9d3c3; }
+.disco .mems {
+  width: 44px; height: 44px; background: var(--chip); border-radius: 4px;
+  color: #8a93a0; font-size: 9px; display: grid; place-items: center; text-align: center;
+}
+
+/* MCP23S08 */
+.mcp {
+  background: var(--pcb); border: 1px solid var(--pcb-line); border-radius: 12px; padding: 12px;
+}
+.mcp .chipbody {
+  background: var(--chip); color: #aab2bd; border-radius: 4px; font-size: 11px;
+  padding: 4px 8px; text-align: center; margin-bottom: 12px; letter-spacing: .5px;
+}
+.mcp .leds { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; justify-items: center; }
+.mcp .led { --c: var(--exp-on); width: 28px; height: 28px; }
+.mcp .cap { color: #b9d3c3; }
+
+/* BarGraph */
+.bar-module {
+  background: #141416; border-radius: 10px; padding: 12px; border: 1px solid #2a2a2e;
+  display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px;
+}
+.segm {
+  height: 78px; border-radius: 3px; background: var(--seg-off); border: 0; padding: 0; cursor: pointer;
+  position: relative; transition: background .1s, box-shadow .1s;
+}
+.segm.lit {
+  background: var(--seg-on);
+  box-shadow: 0 0 calc(4px + 10px * var(--b, 1)) color-mix(in srgb, var(--seg-on) 80%, transparent);
+  opacity: calc(.3 + .7 * var(--b, 1));
+}
+.segm span { position: absolute; bottom: -18px; left: 0; right: 0; font-size: 10px; color: var(--muted); }
+.bar-idx { height: 18px; }
+.level {
+  font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1;
+}
+.level small { font-size: 13px; color: var(--muted); font-weight: 500; }
+.slider { display: grid; grid-template-columns: 88px 1fr 44px; gap: 10px; align-items: center; margin-top: 10px; }
+.slider span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.slider span:first-child { color: var(--muted); font-size: 13px; }
+
+/* Air quality */
+.aq { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.metric .v { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.metric .u { font-size: 13px; color: var(--muted); margin-left: 4px; font-weight: 500; }
+.metric .band { font-size: 12px; font-weight: 600; }
+.scale {
+  height: 6px; border-radius: 3px; margin: 8px 0 4px; position: relative;
+  background: linear-gradient(90deg, var(--ok), #9acd32, var(--warn), #f07c1f, var(--bad));
+}
+.scale i {
+  position: absolute; top: -4px; width: 3px; height: 14px; background: var(--text);
+  border-radius: 2px; transform: translateX(-1px); transition: left .3s;
+}
+canvas.spark { width: 100%; height: 54px; display: block; }
+.fresh { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+
+/* per-LED editor, patterns */
+.ms { font-size: 10px; color: var(--accent); text-align: center; min-height: 13px; font-variant-numeric: tabular-nums; }
+.disco .ms, .mcp .ms { color: #9fd0ff; }
+.pop {
+  position: absolute; z-index: 20; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); min-width: 230px;
+}
+.pop h3 { font-size: 13px; margin: 0 0 8px; }
+.pop .row { margin-top: 8px; }
+.patbar {
+  display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 12px;
+  padding-top: 10px; border-top: 1px dashed var(--line); font-size: 13px;
+}
+.patbar select, .patbar input {
+  font: inherit; font-size: 13px; padding: 3px 6px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+}
+.patbar input { width: 66px; }
+.patbar .running { color: var(--ok); font-weight: 600; font-size: 12px; }
+
+/* firmware */
+.fw-card { margin-top: 16px; }
+.fw { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 760px) { .fw { grid-template-columns: 1fr; } }
+.tblwrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+td code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); }
+.tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; margin-right: 4px;
+  background: var(--surface-2); border: 1px solid var(--line); }
+.tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.drop {
+  border: 1.5px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center;
+  color: var(--muted); cursor: pointer; transition: border-color .12s, background .12s;
+}
+.drop.over, .drop:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.drop b { color: var(--text); }
+.fileinfo { margin-top: 8px; font-size: 13px; min-height: 20px; }
+.fileinfo.bad { color: var(--bad); }
+.opts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0; font-size: 13px; }
+.opts label { display: inline-flex; gap: 6px; align-items: center; }
+.progress { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.steps { list-style: none; padding: 0; margin: 6px 0 0; font-size: 12px; max-height: 150px; overflow: auto; }
+.steps li { padding: 2px 0; color: var(--muted); }
+.steps li:last-child { color: var(--text); }
+.steps li.fail { color: var(--bad); }
+.fwstep { font-size: 13px; font-weight: 600; }
+pre.diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin: 10px 0 0; }
+
+/* log */
+.log-card { margin-top: 16px; }
+.logbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.lvl { border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+.lvl.off { opacity: .45; }
+.logbar input[type=search] {
+  font: inherit; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--text); min-width: 160px; flex: 1;
+}
+.logport { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.logport select, .logport input {
+  font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+}
+.logport select { min-width: 0; max-width: 100%; flex: 1 1 260px; }
+.logport input { width: 96px; }
+.logview {
+  background: #0c0e11; color: #cfd6df; border-radius: 10px; padding: 10px 12px;
+  height: 340px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border: 1px solid #22272e;
+}
+.logview div { white-space: pre-wrap; word-break: break-word; }
+.l-err { color: #ff6b62; } .l-wrn { color: #f2c14e; } .l-inf { color: #cfd6df; }
+.l-dbg { color: #7d8794; } .l-out { color: #9fb3c8; } .l-sys { color: #6aa0ff; font-style: italic; }
+
+#toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
+.toast {
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--bad);
+  padding: 8px 12px; border-radius: 8px; box-shadow: var(--shadow); max-width: 360px; font-size: 13px;
+}
+@media (max-width: 520px) {
+  .aq { grid-template-columns: 1fr; }
+  .disco { grid-template-columns: repeat(3, 64px); }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>mcumgr_custom</h1>
+      <div class="sub">STM32F4DISCOVERY + MikroE shield · MCUmgr SMP</div>
+    </div>
+    <div class="chips">
+      <span class="chip"><span class="dot" id="smp-dot"></span>SMP <b id="smp-port">–</b></span>
+      <span class="chip"><span class="dot" id="log-dot"></span>Log <b id="log-port">–</b></span>
+      <span class="chip" id="ver-chip" title="">image <b id="ver-image">–</b> · build <b id="ver-build">–</b></span>
+      <button id="btn-release" title="Close the SMP serial port, e.g. to run SWUpdate">Release SMP port</button>
+      <button id="btn-reset" title="OS group reset">Reset MCU</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <label>Click on an LED
+      <span class="seg" id="click-mode">
+        <button data-mode="toggle" class="on">toggles on / off</button>
+        <button data-mode="blink">blinks</button>
+        <button data-mode="edit">opens its editor (mode, ms)</button>
+      </span>
+    </label>
+    <label>Default blink period <input type="number" id="period" min="20" max="10000" step="10" value="300"> ms</label>
+    <span class="kv" id="os-info"></span>
+  </div>
+
+  <div class="grid">
+    <section class="card" id="card-board">
+      <div class="card-head"><h2>Discovery LEDs</h2><span class="where">PD12–PD15</span></div>
+      <div class="body">
+        <div class="disco" id="disco"></div>
+        <div class="row" style="margin-top:12px; justify-content:center">
+          <button data-all="board" data-mode="on">All on</button>
+          <button data-all="board" data-mode="off">All off</button>
+        </div>
+        <div class="patbar" data-bank="board"></div>
+      </div>
+      <div class="err"></div>
+    </section>
+
+    <section class="card" id="card-exp">
+      <div class="card-head"><h2>MCP23S08 LEDs</h2><span class="where">mikroBUS 2 · SPI2</span></div>
+      <div class="body">
+        <div class="mcp">
+          <div class="chipbody">MCP23S08 · GP0 … GP7 · active low</div>
+          <div class="leds" id="exp"></div>
+        </div>
+        <div class="row" style="margin-top:12px; justify-content:space-between">
+          <span class="kv">port value <b id="exp-byte">–</b></span>
+          <span class="row">
+            <button data-all="exp" data-mode="on">All on</button>
+            <button data-all="exp" data-mode="off">All off</button>
+            <button id="exp-invert">Invert</button>
+          </span>
+        </div>
+        <div class="patbar" data-bank="expander"></div>
+      </div>
+      <div class="err"></div>
+    </section>
+
+    <section class="card" id="card-bar">
+      <div class="card-head"><h2>BarGraph</h2><span class="where">mikroBUS 3 · SPI3 + TIM3 PWM</span></div>
+      <div class="body">
+        <div class="row" style="justify-content:space-between; margin-bottom:12px">
+          <div class="level" id="bar-level">–</div>
+          <span class="kv" style="text-align:right">mask <b id="bar-mask">–</b><br>click a segment to toggle it</span>
+        </div>
+        <div class="bar-module" id="bar"></div>
+        <div class="bar-idx"></div>
+        <div class="slider"><span>Level</span><input type="range" id="bar-level-in" min="0" max="10" value="0"><span id="bar-level-v">0</span></div>
+        <div class="slider"><span>Brightness</span><input type="range" id="bar-bright-in" min="0" max="100" value="100"><span id="bar-bright-v">100 %</span></div>
+        <div class="patbar" data-bank="bargraph"></div>
+      </div>
+      <div class="err"></div>
+    </section>
+
+    <section class="card" id="card-aq">
+      <div class="card-head"><h2>Air Quality 3</h2><span class="where">mikroBUS 1 · CCS811 · I2C1</span></div>
+      <div class="body">
+        <div class="aq">
+          <div class="metric">
+            <div class="kv">eCO₂</div>
+            <div><span class="v" id="eco2">–</span><span class="u">ppm</span></div>
+            <div class="band" id="eco2-band">&nbsp;</div>
+            <div class="scale"><i id="eco2-mark" style="left:0"></i></div>
+            <canvas class="spark" id="eco2-spark"></canvas>
+          </div>
+          <div class="metric">
+            <div class="kv">TVOC</div>
+            <div><span class="v" id="tvoc">–</span><span class="u">ppb</span></div>
+            <div class="band" id="tvoc-band">&nbsp;</div>
+            <div class="scale"><i id="tvoc-mark" style="left:0"></i></div>
+            <canvas class="spark" id="tvoc-spark"></canvas>
+          </div>
+        </div>
+        <div class="fresh"><span class="dot" id="aq-dot"></span><span id="aq-note">waiting for data</span></div>
+      </div>
+      <div class="err"></div>
+      <div class="row" style="margin-top:10px"><button id="aq-diag">Diagnose sensor</button></div>
+      <pre class="diag" id="aq-diag-out" hidden></pre>
+    </section>
+  </div>
+
+  <section class="card fw-card" id="card-fw">
+    <div class="card-head"><h2>Firmware update</h2><span class="where">MCUmgr image group · MCUboot swap with rollback</span></div>
+    <div class="fw">
+      <div>
+        <div class="tblwrap">
+          <table>
+            <thead><tr><th>slot</th><th>version</th><th>state</th><th>hash</th></tr></thead>
+            <tbody id="fw-slots"><tr><td colspan="4" class="kv">–</td></tr></tbody>
+          </table>
+        </div>
+        <p class="kv" style="margin:10px 0 0">The update uploads to slot 1, marks it for test and resets.
+          MCUboot swaps the slots (about 20 s). If the new image does not confirm itself,
+          the next reset brings the previous one back.</p>
+      </div>
+      <div>
+        <label class="drop" id="fw-drop">
+          <input type="file" id="fw-file" accept=".bin" hidden>
+          Drop <b>zephyr.signed.bin</b> here, or click to choose<br>
+          <span class="kv">build-*/mcumgr_custom/zephyr/zephyr.signed.bin</span>
+        </label>
+        <div class="fileinfo" id="fw-info"></div>
+        <div class="opts">
+          <span class="kv">Confirmed by</span>
+          <label><input type="radio" name="fw-confirm" value="mcu" checked> the image (self-test)</label>
+          <label><input type="radio" name="fw-confirm" value="host"> this page</label>
+        </div>
+        <div class="row">
+          <button class="primary" id="fw-start" disabled>Upload and update</button>
+          <span class="fwstep" id="fw-step"></span>
+        </div>
+        <div class="progress"><i id="fw-bar"></i></div>
+        <ul class="steps" id="fw-steps"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card log-card" id="card-log">
+    <div class="card-head"><h2>Zephyr log</h2><span class="where" id="log-where">USB CDC ACM (Discovery micro-USB)</span></div>
+    <div class="logport">
+      <span class="kv">Port</span>
+      <select id="logport-sel" aria-label="log port"></select>
+      <label class="kv" id="logport-baud-wrap" hidden>baud <input type="number" id="logport-baud" value="115200" min="1200" step="1200"></label>
+      <button id="logport-apply">Apply</button>
+      <button id="logport-scan" title="Rescan serial ports">Rescan</button>
+    </div>
+    <div class="logbar">
+      <button class="lvl" data-lvl="err">err</button>
+      <button class="lvl" data-lvl="wrn">wrn</button>
+      <button class="lvl" data-lvl="inf">inf</button>
+      <button class="lvl" data-lvl="dbg">dbg</button>
+      <button class="lvl" data-lvl="out">other</button>
+      <input type="search" id="log-filter" placeholder="filter">
+      <label class="kv"><input type="checkbox" id="log-follow" checked> follow</label>
+      <button id="log-pause">Pause</button>
+      <button id="log-clear">Clear</button>
+    </div>
+    <div class="logview" id="log"></div>
+  </section>
+</div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const LD_COLOR = { LD3: "--led-orange", LD4: "--led-green", LD5: "--led-red", LD6: "--led-blue" };
+const LD_POS = { LD3: [1, 2], LD4: [2, 1], LD5: [2, 3], LD6: [3, 2] };   // [row, col]
+const LD_COLOR_NAME = { LD3: "orange", LD4: "green", LD5: "red", LD6: "blue" };
+
+let clickMode = "toggle";
+let state = null;
+let smpWasUp = false;
+const history = { eco2: [], tvoc: [] };
+
+// ---------------------------------------------------------------- helpers
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = msg;
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
+}
+function period() {
+  const v = parseInt($("#period").value, 10);
+  return Math.min(10000, Math.max(20, isNaN(v) ? 300 : v));
+}
+function bank(leds, prefix) {
+  return (leds || []).filter((l) => (l.name || "").startsWith(prefix));
+}
+function setCardError(id, msg) {
+  const c = $(id);
+  c.classList.toggle("has-err", !!msg);
+  c.querySelector(".err").textContent = msg || "";
+}
+function applyLedLook(el, led) {
+  const on = led.mode !== "off";
+  el.classList.toggle("lit", on);
+  el.classList.toggle("blinking", led.mode === "blink");
+  el.style.setProperty("--period", (led.period_ms || 500) + "ms");
+  el.title = `${led.name} · led ${led.led} · ${led.mode}${led.mode === "blink" ? " " + led.period_ms + " ms" : ""}`;
+}
+
+// ---------------------------------------------------------------- actions
+async function setLed(idx, mode, ms) {
+  const body = { led: idx, mode };
+  if (mode === "blink") body.period_ms = ms || period();
+  const r = await api("/api/led", body);
+  if (!r.ok) toast(`led ${idx}: ${r.error}`);
+  refresh();
+}
+function clickLed(led, el) {
+  if (clickMode === "edit") return openEditor(led, el);
+  if (clickMode === "blink") return setLed(led.led, led.mode === "blink" ? "off" : "blink");
+  return setLed(led.led, led.mode === "off" ? "on" : "off");
+}
+async function setBargraph(body) {
+  const r = await api("/api/bargraph", body);
+  if (!r.ok) toast(`bargraph: ${r.error}`);
+  refresh();
+}
+
+// ---------------------------------------------------------------- render
+function renderBoard(leds) {
+  const box = $("#disco");
+  const board = bank(leds, "User");
+  if (box.dataset.n != board.length) {
+    box.innerHTML = "";
+    box.dataset.n = board.length;
+    const mems = document.createElement("div");
+    mems.className = "mems"; mems.textContent = "LIS3DSH";
+    mems.style.gridRow = 2; mems.style.gridColumn = 2;
+    box.appendChild(mems);
+    board.forEach((l, i) => {
+      const ld = (l.name.match(/LD\d/) || ["LD?"])[0];
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      const [r, c] = LD_POS[ld] || [1 + (i >> 1), 1 + (i & 1) * 2];
+      cell.style.gridRow = r; cell.style.gridColumn = c;
+      const b = document.createElement("button");
+      b.className = "led"; b.dataset.idx = l.led;
+      b.style.setProperty("--c", `var(${LD_COLOR[ld] || "--led-green"})`);
+      b.setAttribute("aria-label", l.name);
+      const cap = document.createElement("div");
+      cap.className = "cap"; cap.textContent = `${ld} ${LD_COLOR_NAME[ld] || ""}`;
+      const ms = document.createElement("div"); ms.className = "ms";
+      cell.append(b, cap, ms);
+      box.appendChild(cell);
+    });
+  }
+  board.forEach((l) => {
+    const b = box.querySelector(`[data-idx="${l.led}"]`);
+    if (b) {
+      if (!patternActive("board")) applyLedLook(b, l);
+      b.onclick = () => clickLed(l, b);
+      b.parentElement.querySelector(".ms").textContent = l.mode === "blink" ? l.period_ms + " ms" : "";
+    }
+  });
+}
+
+function renderExp(leds) {
+  const box = $("#exp");
+  const exp = bank(leds, "exp");
+  if (box.dataset.n != exp.length) {
+    box.innerHTML = "";
+    box.dataset.n = exp.length;
+    exp.forEach((l, i) => {
+      const cell = document.createElement("div");
+      const b = document.createElement("button");
+      b.className = "led"; b.dataset.idx = l.led; b.setAttribute("aria-label", l.name);
+      const cap = document.createElement("div");
+      cap.className = "cap"; cap.textContent = "GP" + i;
+      const ms = document.createElement("div"); ms.className = "ms";
+      cell.append(b, cap, ms);
+      box.appendChild(cell);
+    });
+  }
+  let byte = 0;
+  exp.forEach((l, i) => {
+    const b = box.querySelector(`[data-idx="${l.led}"]`);
+    if (b) {
+      if (!patternActive("expander")) applyLedLook(b, l);
+      b.onclick = () => clickLed(l, b);
+      b.parentElement.querySelector(".ms").textContent = l.mode === "blink" ? l.period_ms : "";
+    }
+    if (l.mode !== "off") byte |= 1 << i;
+  });
+  // active low: a lit LED is a 0 on the pin
+  $("#exp-byte").textContent = exp.length
+    ? `LEDs 0x${byte.toString(16).padStart(2, "0")} · pins 0x${(~byte & 0xff).toString(16).padStart(2, "0")}`
+    : "–";
+}
+
+function renderBar(bg, leds) {
+  const box = $("#bar");
+  const segs = bank(leds, "bar");
+  const n = bg ? bg.segments : segs.length;
+  if (box.dataset.n != n) {
+    box.innerHTML = "";
+    box.dataset.n = n;
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement("button");
+      s.className = "segm"; s.dataset.i = i; s.setAttribute("aria-label", "segment " + i);
+      const lab = document.createElement("span"); lab.textContent = i;
+      s.appendChild(lab);
+      box.appendChild(s);
+    }
+    $("#bar-level-in").max = n;
+  }
+  if (!bg) return;
+  const b = bg.brightness / 100;
+  box.style.setProperty("--b", b);
+  const animated = patternActive("bargraph");
+  for (let i = 0; i < n; i++) {
+    const s = box.children[i];
+    const led = segs[i];
+    const lit = !!(bg.mask & (1 << i));
+    if (!animated) {
+      s.classList.toggle("lit", lit);
+      s.classList.toggle("blinking", !!led && led.mode === "blink");
+    }
+    if (led) s.style.setProperty("--period", (led.period_ms || 500) + "ms");
+    s.onclick = () => {
+      if (clickMode === "edit" && led) return openEditor(led, s);
+      if (clickMode === "blink" && led) return setLed(led.led, led.mode === "blink" ? "off" : "blink");
+      setBargraph({ mask: bg.mask ^ (1 << i) });
+    };
+  }
+  let level = null;
+  for (let k = 0; k <= n; k++) if (bg.mask === (1 << k) - 1) level = k;
+  $("#bar-level").innerHTML = animated
+    ? `${patterns.bargraph.pattern} <small>pattern</small>`
+    : level === null
+    ? `custom <small>${popcount(bg.mask)} / ${n} on</small>`
+    : `${level}<small> / ${n}</small>`;
+  $("#bar-mask").textContent = "0x" + bg.mask.toString(16).padStart(3, "0");
+  if (document.activeElement !== $("#bar-level-in") && level !== null) {
+    $("#bar-level-in").value = level; $("#bar-level-v").textContent = level;
+  }
+  if (document.activeElement !== $("#bar-bright-in")) {
+    $("#bar-bright-in").value = bg.brightness;
+    $("#bar-bright-v").textContent = bg.brightness + " %";
+  }
+}
+function popcount(x) { let c = 0; while (x) { c += x & 1; x >>>= 1; } return c; }
+
+const ECO2_BANDS = [[600, "excellent", "var(--ok)"], [800, "good", "#7fb800"], [1000, "fair", "var(--warn)"],
+                    [1500, "poor", "#f07c1f"], [Infinity, "bad", "var(--bad)"]];
+const TVOC_BANDS = [[65, "excellent", "var(--ok)"], [220, "good", "#7fb800"], [660, "moderate", "var(--warn)"],
+                    [2200, "poor", "#f07c1f"], [Infinity, "bad", "var(--bad)"]];
+function band(v, bands) { return bands.find(([max]) => v <= max); }
+
+function renderAq(aq, err) {
+  if (!aq) {
+    $("#aq-dot").className = "dot " + (err ? "bad" : "");
+    $("#aq-note").textContent = err ? "no data" : "waiting for data";
+    return;
+  }
+  for (const [key, bands, lo, hi] of [["eco2", ECO2_BANDS, 400, 2000], ["tvoc", TVOC_BANDS, 0, 1200]]) {
+    const v = aq[key];
+    $("#" + key).textContent = v;
+    const [, label, color] = band(v, bands);
+    const el = $("#" + key + "-band"); el.textContent = label; el.style.color = color;
+    $("#" + key + "-mark").style.left = (100 * Math.min(1, Math.max(0, (v - lo) / (hi - lo)))) + "%";
+    if (aq.fresh || !history[key].length) {
+      history[key].push(v);
+      if (history[key].length > 300) history[key].shift();
+    }
+    spark($("#" + key + "-spark"), history[key], color);
+  }
+  const warming = aq.eco2 <= 400 && aq.tvoc === 0;
+  $("#aq-dot").className = "dot " + (aq.fresh ? "ok" : "warn");
+  $("#aq-note").textContent = (aq.fresh ? "new reading" : "no new result since the last read") +
+    (warming ? " · sensor warming up (≈20 s after power on)" : "");
+}
+
+function spark(canvas, data, color) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w) return;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d");
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+  if (data.length < 2) return;
+  const min = Math.min(...data), max = Math.max(...data);
+  const span = max - min || 1;
+  const x = (i) => (i / (data.length - 1)) * (w - 2) + 1;
+  const y = (v) => h - 4 - ((v - min) / span) * (h - 10);
+  g.beginPath();
+  data.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
+  g.strokeStyle = getComputedStyle(document.body).getPropertyValue("--accent") || "#2f6fdf";
+  g.lineWidth = 1.6; g.stroke();
+  g.lineTo(x(data.length - 1), h); g.lineTo(x(0), h); g.closePath();
+  g.globalAlpha = .1; g.fillStyle = g.strokeStyle; g.fill(); g.globalAlpha = 1;
+  g.fillStyle = getComputedStyle(document.body).getPropertyValue("--muted");
+  g.font = "10px system-ui"; g.fillText(`${min}–${max}`, 4, 11);
+}
+
+function renderStatus(s) {
+  const smp = s.smp || {};
+  const up = !!s.leds;
+  $("#smp-port").textContent = smp.port || "–";
+  $("#smp-dot").className = "dot " + (smp.released ? "warn" : up ? "ok" : "bad");
+  $("#smp-dot").parentElement.title = smp.released ? "released" : (smp.error || (up ? "connected" : ""));
+  $("#btn-release").textContent = smp.released ? "Connect SMP port" : "Release SMP port";
+  $("#btn-release").dataset.released = smp.released ? "1" : "";
+  $("#log-port").textContent = s.log.port || "–";
+  $("#log-dot").className = "dot " + (s.log.connected ? "ok" : "bad");
+  for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) $(id).classList.toggle("dim", !up);
+  if (s.busy) {
+    for (const id of ["#card-board", "#card-exp", "#card-bar", "#card-aq"]) setCardError(id, "firmware update running…");
+    return;
+  }
+  if (up && !smpWasUp) loadInfo();
+  smpWasUp = up;
+}
+
+// ---------------------------------------------------------------- polling
+let busy = false;
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  try {
+    const s = await api("/api/state");
+    state = s;
+    renderStatus(s);
+    const down = s.busy ? "firmware update running…" :
+      s.smp && s.smp.released ? "SMP port released" : s.leds_error;
+    setCardError("#card-board", down);
+    if (s.leds) {
+      renderPatterns(s.patterns);
+      renderBoard(s.leds);
+      renderExp(s.leds);
+      const expMissing = bank(s.leds, "exp").length === 0;
+      setCardError("#card-exp", expMissing ? "no expander LEDs in this firmware" : null);
+      renderBar(s.bargraph, s.leds);
+      setCardError("#card-bar", s.bargraph_error);
+      renderAq(s.airq, s.airq_error);
+      const pendingInit = /INIT_PENDING/.test(s.airq_error || "");
+      setCardError("#card-aq", pendingInit ? null : s.airq_error &&
+        s.airq_error + " · press “Diagnose sensor”");
+      if (pendingInit) $("#aq-note").textContent = "sensor starting…";
+    }
+  } catch (e) {
+    $("#smp-dot").className = "dot bad";
+    $("#smp-dot").parentElement.title = "web server not reachable";
+  } finally {
+    busy = false;
+  }
+}
+
+async function loadInfo() {
+  const i = await api("/api/info");
+  if (i.version) {
+    $("#ver-image").textContent = i.version.image;
+    $("#ver-build").textContent = i.version.build;
+    $("#ver-chip").title = `LED protocol ${i.version.protocol}, ${i.version.leds} LEDs`;
+  }
+  if (i.os) $("#os-info").textContent = i.os.output;
+  if (i.images) {
+    const imgs = i.images.images || [];
+    const slots = imgs.map((im) =>
+      `slot ${im.slot}: ${im.version}${im.active ? " active" : ""}${im.confirmed ? " confirmed" : ""}${im.pending ? " pending" : ""}`);
+    $("#ver-chip").title += "\n" + slots.join("\n");
+    renderSlots(imgs);
+  }
+}
+
+// ---------------------------------------------------------------- patterns
+// same algorithm as src/pattern.c, to animate the page between two polls
+let patterns = {};            // bank -> {pattern, step_ms, width, leds}
+let patternNames = ["off", "k2000", "chase", "fill", "alternate", "counter"];
+const animators = {};
+const BANK_PREFIX = { board: "User", expander: "exp", bargraph: "bar" };
+
+function patternActive(bank) { return patterns[bank] && patterns[bank].pattern !== "off"; }
+function patternMask(name, n, step, width) {
+  let mask = 0;
+  if (!n) return 0;
+  if (name === "k2000") {
+    const len = n > 1 ? 2 * (n - 1) : 1, p = step % len;
+    const head = p < n ? p : len - p, dir = p < n - 1 ? 1 : -1;
+    for (let k = 0; k < width; k++) { const i = head - dir * k; if (i >= 0 && i < n) mask |= 1 << i; }
+  } else if (name === "chase") {
+    const head = step % n;
+    for (let k = 0; k < width && k < n; k++) mask |= 1 << ((head + n - k) % n);
+  } else if (name === "fill") {
+    const p = step % (2 * n), level = p <= n ? p : 2 * n - p;
+    mask = (1 << level) - 1;
+  } else if (name === "alternate") {
+    mask = ((step & 1) ? 0x2aaaaaaa : 0x15555555) & ((1 << n) - 1);
+  } else if (name === "counter") {
+    mask = step & ((1 << n) - 1);
+  }
+  return mask;
+}
+function bankElements(bankName) {
+  if (bankName === "bargraph") return [...$("#bar").children];
+  const box = bankName === "board" ? $("#disco") : $("#exp");
+  const leds = bank(state && state.leds, BANK_PREFIX[bankName]);
+  return leds.map((l) => box.querySelector(`[data-idx="${l.led}"]`)).filter(Boolean);
+}
+function syncAnimator(bankName) {
+  const p = patterns[bankName];
+  const key = p ? `${p.pattern}/${p.step_ms}/${p.width}` : "off";
+  const a = animators[bankName];
+  if (a && a.key === key) return;
+  if (a) clearInterval(a.timer);
+  delete animators[bankName];
+  if (!patternActive(bankName)) return;
+  const anim = { key, step: 0 };
+  anim.timer = setInterval(() => {
+    const els = bankElements(bankName);
+    const mask = patternMask(p.pattern, els.length, anim.step++, p.width);
+    els.forEach((el, i) => { el.classList.remove("blinking"); el.classList.toggle("lit", !!(mask & (1 << i))); });
+  }, p.step_ms);
+  animators[bankName] = anim;
+}
+function renderPatterns(rsp) {
+  patterns = {};
+  if (rsp) {
+    patternNames = rsp.patterns || patternNames;
+    for (const b of rsp.banks) patterns[b.bank] = b;
+  }
+  document.querySelectorAll(".patbar").forEach((bar) => {
+    const bankName = bar.dataset.bank;
+    const p = patterns[bankName];
+    if (!bar.dataset.built) {
+      bar.dataset.built = "1";
+      bar.innerHTML = `<span class="kv">Pattern</span>
+        <select class="p-name">${patternNames.filter((n) => n !== "off").map((n) => `<option>${n}</option>`).join("")}</select>
+        <label class="kv">step <input class="p-step" type="number" min="20" max="5000" step="10" value="${bankName === "bargraph" ? 70 : 120}"> ms</label>
+        <label class="kv">width <input class="p-width" type="number" min="1" max="4" value="2"></label>
+        <button class="p-run">Run</button><button class="p-stop">Stop</button>
+        <span class="running"></span>`;
+      bar.querySelector(".p-run").onclick = () => runPattern(bankName, bar.querySelector(".p-name").value,
+        +bar.querySelector(".p-step").value, +bar.querySelector(".p-width").value);
+      bar.querySelector(".p-stop").onclick = () => runPattern(bankName, "off");
+    }
+    bar.hidden = !p;
+    bar.querySelector(".running").textContent = patternActive(bankName)
+      ? `▶ ${p.pattern} · ${p.step_ms} ms${["k2000", "chase"].includes(p.pattern) ? " · width " + p.width : ""}` : "";
+    syncAnimator(bankName);
+  });
+}
+async function runPattern(bankName, name, step_ms, width) {
+  const body = { bank: bankName, pattern: name };
+  if (name !== "off") Object.assign(body, { step_ms, width });
+  const r = await api("/api/pattern", body);
+  if (!r.ok) toast(`pattern ${bankName}: ${r.error}`);
+  refresh();
+}
+
+// ---------------------------------------------------------------- per-LED editor
+let pop = null;
+function closeEditor() { if (pop) { pop.remove(); pop = null; } }
+function openEditor(led, el) {
+  closeEditor();
+  pop = document.createElement("div");
+  pop.className = "pop";
+  pop.innerHTML = `<h3></h3>
+    <span class="seg"><button data-m="off">off</button><button data-m="on">on</button><button data-m="blink">blink</button></span>
+    <div class="row"><label class="kv">period <input type="number" min="20" max="10000" step="10"> ms</label></div>
+    <div class="row"><button class="primary">Apply</button><button class="cancel">Close</button></div>`;
+  pop.querySelector("h3").textContent = `${led.name} · led ${led.led}`;
+  let mode = led.mode;
+  const segBtns = pop.querySelectorAll(".seg button");
+  const sync = () => segBtns.forEach((b) => b.classList.toggle("on", b.dataset.m === mode));
+  segBtns.forEach((b) => b.onclick = () => { mode = b.dataset.m; sync(); });
+  sync();
+  const ms = pop.querySelector("input");
+  ms.value = led.mode === "blink" ? led.period_ms : period();
+  pop.querySelector(".primary").onclick = async () => {
+    const v = Math.min(10000, Math.max(20, parseInt(ms.value, 10) || 300));
+    closeEditor();
+    await setLed(led.led, mode, v);
+  };
+  pop.querySelector(".cancel").onclick = closeEditor;
+  document.body.appendChild(pop);
+  const r = el.getBoundingClientRect();
+  const left = Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 16);
+  pop.style.left = Math.max(16, left) + "px";
+  pop.style.top = (window.scrollY + r.bottom + 8) + "px";
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeEditor(); });
+document.addEventListener("mousedown", (e) => {
+  if (pop && !pop.contains(e.target) && !e.target.closest(".led, .segm")) closeEditor();
+});
+
+// ---------------------------------------------------------------- firmware
+let fwFile = null;
+function renderSlots(imgs) {
+  const tb = $("#fw-slots");
+  tb.innerHTML = "";
+  if (!imgs.length) { tb.innerHTML = '<tr><td colspan="4" class="kv">no image</td></tr>'; return; }
+  for (const im of imgs) {
+    const tr = document.createElement("tr");
+    const tags = [];
+    if (im.active) tags.push('<span class="tag ok">running</span>');
+    if (im.confirmed) tags.push('<span class="tag ok">confirmed</span>');
+    else if (im.active) tags.push('<span class="tag warn">not confirmed</span>');
+    if (im.pending) tags.push('<span class="tag warn">pending test</span>');
+    tr.innerHTML = `<td>${im.slot}</td><td><b></b></td><td>${tags.join("") || '<span class="kv">–</span>'}</td><td><code></code></td>`;
+    tr.querySelector("b").textContent = im.version;
+    tr.querySelector("code").textContent = (im.hash || "").slice(0, 16) + "…";
+    tr.querySelector("code").title = im.hash || "";
+    tb.appendChild(tr);
+  }
+}
+function parseImage(buf) {
+  const v = new DataView(buf);
+  if (buf.byteLength < 32 || v.getUint32(0, true) !== 0x96f3b83d)
+    throw new Error("not an MCUboot signed image: use zephyr.signed.bin");
+  return `${v.getUint8(20)}.${v.getUint8(21)}.${v.getUint16(22, true)}+${v.getUint32(24, true)}`;
+}
+async function pickFile(f) {
+  fwFile = null;
+  $("#fw-start").disabled = true;
+  const info = $("#fw-info");
+  info.className = "fileinfo";
+  if (!f) { info.textContent = ""; return; }
+  const buf = await f.arrayBuffer();
+  try {
+    const ver = parseImage(buf);
+    info.textContent = `${f.name} · ${(f.size / 1024).toFixed(1)} KiB · version ${ver}`;
+    fwFile = { name: f.name, buf };
+    $("#fw-start").disabled = false;
+  } catch (e) {
+    info.className = "fileinfo bad";
+    info.textContent = `${f.name}: ${e.message}`;
+  }
+}
+const drop = $("#fw-drop");
+$("#fw-file").onchange = (e) => pickFile(e.target.files[0]);
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); pickFile(e.dataTransfer.files[0]); };
+
+const STEP_LABEL = { upload: "Uploading", test: "Marking for test", reset: "Rebooting, MCUboot swaps",
+                     verify: "Checking the running image", confirm: "Waiting for confirmation",
+                     done: "Update done", failed: "Update failed" };
+function renderJob(j) {
+  if (!j || j.step === undefined) return;
+  $("#fw-bar").style.width = (j.step === "upload" ? j.progress : j.step === "done" ? 100 : j.progress) + "%";
+  $("#fw-bar").style.background = j.ok === false ? "var(--bad)" : j.ok ? "var(--ok)" : "var(--accent)";
+  $("#fw-step").textContent = (STEP_LABEL[j.step] || j.step) +
+    (j.step === "upload" ? ` ${j.progress} %` : "") + (j.active && j.step !== "upload" ? "…" : "");
+  const ul = $("#fw-steps");
+  ul.innerHTML = "";
+  for (const st of j.steps) {
+    const li = document.createElement("li");
+    li.textContent = new Date(st.t * 1000).toLocaleTimeString() + "  " + st.text;
+    if (st.text.startsWith("FAILED")) li.className = "fail";
+    ul.appendChild(li);
+  }
+  ul.scrollTop = ul.scrollHeight;
+}
+async function pollJob() {
+  const j = await api("/api/firmware");
+  renderJob(j);
+  if (j.active) return setTimeout(pollJob, 500);
+  $("#fw-start").disabled = !fwFile;
+  smpWasUp = false;   // reload version and slots
+  refresh();
+  if (j.ok === false) toast("update failed: " + (j.error || ""));
+}
+$("#fw-start").onclick = async () => {
+  if (!fwFile) return;
+  $("#fw-start").disabled = true;
+  const confirm = document.querySelector('input[name="fw-confirm"]:checked').value;
+  const r = await fetch(`/api/firmware?name=${encodeURIComponent(fwFile.name)}&confirm=${confirm}`,
+                        { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: fwFile.buf });
+  const j = await r.json();
+  if (!j.ok) { toast(j.error); $("#fw-start").disabled = false; return; }
+  renderJob(j.job);
+  pollJob();
+};
+
+// ---------------------------------------------------------------- air quality diag
+function airqHint(d) {
+  const found = d.probe.filter((p) => p.ack);
+  const hex = (v) => "0x" + v.toString(16).padStart(2, "0");
+  if (d.init === "ok") return "driver running";
+  if (d.init === "pending") return "driver not started yet (first seconds after boot)";
+  if (!found.length) return "nothing answers at 0x5a / 0x5b on I2C1 (PB8 SCL, PB7 SDA): click seated on mikroBUS 1? power, nWAKE (PB12), I2C pull-ups";
+  const p = found[0];
+  if (p.addr !== d.addr) return `CCS811 at ${hex(p.addr)} but the devicetree says ${hex(d.addr)}: fix reg in boards/stm32f4_disco.overlay (or the ADDR jumper)`;
+  if (p.hw_id !== 0x81) return `device at ${hex(p.addr)} is not a CCS811 (hw_id ${hex(p.hw_id)})`;
+  if (!(p.status & 0x10)) return "CCS811 without valid application firmware (APP_VALID = 0)";
+  return "CCS811 answers: see the ccs811 driver error in the log (boot)";
+}
+$("#aq-diag").onclick = async () => {
+  const out = $("#aq-diag-out");
+  out.hidden = false; out.textContent = "probing…";
+  const r = await api("/api/airq/diag");
+  if (!r.ok) { out.textContent = "diag failed: " + r.error; return; }
+  const d = r.rsp, hex = (v, n = 2) => "0x" + v.toString(16).padStart(n, "0");
+  const lines = [`driver init: ${d.init} (${d.init_rc}), devicetree address ${hex(d.addr)}`];
+  for (const p of d.probe) {
+    lines.push(!p.ack ? `  ${hex(p.addr)}: no answer` :
+      `  ${hex(p.addr)}: hw_id ${hex(p.hw_id)}, status ${hex(p.status)} (app ${p.status & 0x10 ? "valid" : "MISSING"}, ` +
+      `${p.status & 0x80 ? "running" : "boot mode"}${p.status & 1 ? ", ERROR" : ""}), error_id ${hex(p.error_id)}, app fw ${hex(p.fw_app, 4)}`);
+  }
+  lines.push("→ " + airqHint(d));
+  out.textContent = lines.join("\n");
+};
+
+// ---------------------------------------------------------------- log
+const logBox = $("#log");
+const levels = { err: true, wrn: true, inf: true, dbg: true, out: true, sys: true };
+let lastSeq = 0, paused = false, pending = [];
+
+function logLine(l) {
+  const d = document.createElement("div");
+  d.className = "l-" + l.level;
+  d.dataset.lvl = l.level;
+  d.textContent = l.text;
+  applyFilter(d);
+  logBox.appendChild(d);
+  while (logBox.childElementCount > 2000) logBox.firstChild.remove();
+}
+function applyFilter(d) {
+  const f = $("#log-filter").value.toLowerCase();
+  d.hidden = !levels[d.dataset.lvl] || (f && !d.textContent.toLowerCase().includes(f));
+}
+function flush() {
+  pending.forEach(logLine); pending = [];
+  if ($("#log-follow").checked) logBox.scrollTop = logBox.scrollHeight;
+}
+function startLog() {
+  const es = new EventSource("/api/log?since=" + lastSeq);
+  es.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    for (const l of m.lines) {
+      if (l.seq === 1 && lastSeq > 1) lastSeq = 0;   // web server restarted
+      if (l.seq <= lastSeq) continue;
+      lastSeq = l.seq;
+      pending.push(l);
+    }
+    if (!paused) flush();
+    $("#log-where").textContent = m.connected ? `USB CDC ACM ${m.port}` : "USB CDC ACM: not connected";
+  };
+  es.onerror = () => { es.close(); setTimeout(startLog, 2000); };
+}
+document.querySelectorAll(".lvl").forEach((b) => b.onclick = () => {
+  levels[b.dataset.lvl] = !levels[b.dataset.lvl];
+  b.classList.toggle("off", !levels[b.dataset.lvl]);
+  logBox.querySelectorAll("div").forEach(applyFilter);
+});
+$("#log-filter").oninput = () => logBox.querySelectorAll("div").forEach(applyFilter);
+$("#log-pause").onclick = () => {
+  paused = !paused;
+  $("#log-pause").textContent = paused ? `Resume` : "Pause";
+  if (!paused) flush();
+};
+$("#log-clear").onclick = () => { logBox.innerHTML = ""; pending = []; };
+
+// ---------------------------------------------------------------- log port
+async function loadPorts() {
+  const r = await api("/api/ports");
+  const sel = $("#logport-sel");
+  const cur = r.log.mode === "auto" ? "auto" : r.log.fixed_port;
+  sel.innerHTML = "";
+  const auto = new Option("auto: Zephyr USB CDC ACM (Discovery micro-USB)", "auto");
+  sel.add(auto);
+  for (const p of r.ports) {
+    const tags = [p.zephyr_log ? "Zephyr log" : "", p.smp ? "SMP port" : ""].filter(Boolean);
+    const o = new Option(`${p.device} · ${p.description}${p.usb ? " (" + p.usb + ")" : ""}` +
+                         (tags.length ? "  [" + tags.join(", ") + "]" : ""), p.device);
+    o.disabled = p.smp;
+    sel.add(o);
+  }
+  if (cur && ![...sel.options].some((o) => o.value === cur)) sel.add(new Option(`${cur} (not present)`, cur));
+  sel.value = cur || "auto";
+  $("#logport-baud").value = r.log.baud;
+  $("#logport-baud-wrap").hidden = sel.value === "auto";
+}
+$("#logport-sel").onchange = (e) => { $("#logport-baud-wrap").hidden = e.target.value === "auto"; };
+$("#logport-scan").onclick = loadPorts;
+$("#logport-apply").onclick = async () => {
+  const r = await api("/api/logport", { port: $("#logport-sel").value, baud: +$("#logport-baud").value });
+  if (!r.ok) toast("log port: " + r.error);
+  loadPorts();
+};
+
+// ---------------------------------------------------------------- controls
+document.querySelectorAll("#click-mode button").forEach((b) => b.onclick = () => {
+  clickMode = b.dataset.mode;
+  document.querySelectorAll("#click-mode button").forEach((x) => x.classList.toggle("on", x === b));
+});
+document.querySelectorAll("[data-all]").forEach((b) => b.onclick = async () => {
+  if (!state || !state.leds) return;
+  const prefix = b.dataset.all === "board" ? "User" : "exp";
+  for (const l of bank(state.leds, prefix)) {
+    const r = await api("/api/led", { led: l.led, mode: b.dataset.mode });
+    if (!r.ok) { toast(`led ${l.led}: ${r.error}`); break; }
+  }
+  refresh();
+});
+$("#exp-invert").onclick = async () => {
+  if (!state || !state.leds) return;
+  for (const l of bank(state.leds, "exp")) {
+    await api("/api/led", { led: l.led, mode: l.mode === "off" ? "on" : "off" });
+  }
+  refresh();
+};
+$("#bar-level-in").oninput = (e) => { $("#bar-level-v").textContent = e.target.value; };
+$("#bar-level-in").onchange = (e) => setBargraph({ level: +e.target.value });
+$("#bar-bright-in").oninput = (e) => { $("#bar-bright-v").textContent = e.target.value + " %"; };
+$("#bar-bright-in").onchange = (e) => setBargraph({ brightness: +e.target.value });
+$("#btn-reset").onclick = async () => {
+  const r = await api("/api/reset", {});
+  if (!r.ok) toast("reset: " + r.error);
+  smpWasUp = false;
+};
+$("#btn-release").onclick = async () => {
+  await api("/api/smp", { connect: !!$("#btn-release").dataset.released });
+  refresh();
+};
+
+startLog();
+loadPorts();
+api("/api/firmware").then((j) => { if (j.active) { renderJob(j); pollJob(); } });
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

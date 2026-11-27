@@ -219,7 +219,7 @@ click boards, LED and bargraph changes) or `CONFIG_APP_LOG_LEVEL_DBG=y`
 (debug: also each air quality read).
 
 ```sh
-python -m serial.tools.miniterm /dev/ttyACM2 115200
+python -m serial.tools.miniterm /dev/ttyACM2 115200   # or the web UI
 ```
 
 Other ways to get logs, if the micro-USB is not usable:
@@ -232,6 +232,51 @@ Other ways to get logs, if the micro-USB is not usable:
 * **Logs in the SMP stream** (a custom log group with a RAM ring buffer,
   read by polling): one cable, but it uses SMP bandwidth and does not
   show what happens before the application answers.
+
+## Web UI
+
+`scripts/web_ui.py` is a local web server (Python standard library +
+pyserial). It drives the board over SMP and streams the log port:
+
+```sh
+python $APP/scripts/web_ui.py               # http://127.0.0.1:8000
+python $APP/scripts/web_ui.py -p /dev/ttyUSB0 --log-port /dev/ttyACM2 --http 0.0.0.0:8000
+```
+
+* **Discovery LEDs**: LD3..LD6 placed as on the board.
+* **MCP23S08**: GP0..GP7, the port value (LEDs lit and pin levels,
+  active low), all on / all off / invert.
+* **BarGraph**: click a segment to toggle it, level and brightness
+  sliders, the level (or "custom" for a non-contiguous mask).
+* **Air Quality 3**: eCO2 and TVOC with quality bands and the last
+  5 minutes.
+* **Zephyr log**: live, colored by level, filter, pause; reconnects
+  after each MCU reset. The port is chosen in the panel: **auto** (the
+  firmware USB CDC ACM, found by its VID / product string) or any serial
+  port with its baud rate (e.g. a USB-UART on USART3 if you move the
+  console there). The SMP port cannot be picked.
+* **Firmware update**: slots table (version, running / confirmed /
+  pending, hash), drop a `zephyr.signed.bin` (its MCUboot header is
+  checked and its version shown before the upload), choose who confirms
+  (the image's self-test, or the page), then **Upload and update**:
+  upload to slot 1 (512-byte chunks), test, reset, wait for the swap,
+  check that the new image runs, confirm. The steps also go to the log
+  panel. An image that is already running is refused. Panels pause
+  during the update.
+* **Air Quality → Diagnose sensor**: the `airq diag` result with the hint.
+* The toolbar sets what a click on an LED (or a bargraph segment) does:
+  toggle on / off, blink with the default period, or **open its editor**:
+  mode off / on / blink and its own period in ms. Blinking LEDs show
+  their period under them.
+* **Patterns**: each LED card has a pattern bar (pattern, step ms,
+  width, Run / Stop). The firmware runs the pattern; the page animates
+  the same algorithm at the same step, since a 1 Hz poll would only show
+  random frames.
+
+The page polls the state once a second (one `led get`, one `bargraph`,
+`airq` and `pattern` read each). The server holds `/dev/ttyUSB0`: press **Release
+SMP port** before running SWUpdate on it, then **Connect SMP port**.
+**Reset MCU** sends the OS reset; the log shows the boot.
 
 ## Adding a group or a command
 
