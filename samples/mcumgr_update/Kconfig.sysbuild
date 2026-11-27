@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# MCUboot mode per board. Both modes keep the rollback (test / confirm):
+# - frdm_k64f: 4 KiB sectors, equal slots -> swap using move
+# - stm32f4_disco: 128 KiB sectors -> swap using scratch, as the other
+#   STM32F4 boards of Zephyr
+choice MCUBOOT_MODE
+	default MCUBOOT_MODE_SWAP_SCRATCH if "$(BOARD)" = "stm32f4_disco"
+	default MCUBOOT_MODE_SWAP_USING_MOVE if "$(BOARD)" = "frdm_k64f"
+endchoice
+
+source "share/sysbuild/Kconfig"

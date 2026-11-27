@@ -1,0 +1,15 @@
+# Minimal SWUpdate for a Linux PC: local .swu install + mcumgr handler.
+# Build with build-host-swupdate.sh (also disables optional libraries).
+# CONFIG_HW_COMPATIBILITY is not set
+# CONFIG_MTD is not set
+# CONFIG_LUA is not set
+# CONFIG_DOWNLOAD is not set
+# CONFIG_WEBSERVER is not set
+# CONFIG_SURICATTA is not set
+# CONFIG_GUNZIP is not set
+CONFIG_LIBCONFIG=y
+CONFIG_SSL_IMPL_OPENSSL=y
+CONFIG_HASH_VERIFY=y
+CONFIG_BOOTLOADER_NONE=y
+CONFIG_BOOTLOADER_DEFAULT_NONE=y
+CONFIG_MCUMGRHANDLER=y

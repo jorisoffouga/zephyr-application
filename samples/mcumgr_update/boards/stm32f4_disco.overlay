@@ -1,0 +1,19 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * STM32F4DISCOVERY (STM32F407G-DISC1) + MikroElektronika STM32F4 Discovery
+ * Shield (MIKROE-1481).
+ *
+ * SMP runs on USART2 (PA2 TX, PA3 RX), wired on the shield to its FT232RL
+ * USB-UART (mini-B connector, /dev/ttyUSB0 on the host). The application
+ * has no console: USART2 carries only SMP frames (and the MCUboot log).
+ */
+
+#include "stm32f4_disco_partitions.dtsi"
+
+/ {
+	chosen {
+		zephyr,code-partition = &slot0_partition;
+		zephyr,uart-mcumgr = &usart2;
+	};
+};
