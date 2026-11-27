@@ -53,7 +53,7 @@ config APP_BARGRAPH_MGMT
 config APP_AIRQ_MGMT
 	bool "Custom MCUmgr group 66: airq"
 	default y
-	depends on MCUMGR && SENSOR && DT_HAS_AMS_CCS811_ENABLED
+	depends on MCUMGR && I2C && GPIO && DT_HAS_AMS_CCS811_ENABLED
 	# diag response: base map -> "probe" list -> one map per address
 	select MCUMGR_SMP_CBOR_MIN_ENCODING_LEVEL_2
 	help
@@ -148,13 +148,12 @@ config APP_PATTERN_MGMT
 	  See include/pattern_mgmt.h.
 
 config APP_AIRQ_INIT_DELAY_MS
-	int "Delay before the CCS811 driver init, in ms"
+	int "Delay before the CCS811 start, in ms"
 	depends on APP_AIRQ_MGMT
 	default 2500
 	help
-	  The ccs811 node has zephyr,deferred-init: the application starts
-	  the driver after this delay, once the USB log is up, so the driver
-	  errors are visible. device_init() runs only once: after a failure,
-	  reset the MCU to try again.
+	  src/airq_mgmt.c starts the sensor after this delay, once the USB
+	  log is up, so a failure is visible. It tries 3 times, then the
+	  measure command tries again every 5 s.
 
 source "Kconfig.zephyr"

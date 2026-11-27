@@ -1199,14 +1199,14 @@ $("#fw-start").onclick = async () => {
 function airqHint(d) {
   const found = d.probe.filter((p) => p.ack);
   const hex = (v) => "0x" + v.toString(16).padStart(2, "0");
-  if (d.init === "ok") return "driver running";
-  if (d.init === "pending") return "driver not started yet (first seconds after boot)";
+  if (d.init === "ok") return "sensor running";
+  if (d.init === "pending") return "sensor not started yet (first seconds after boot)";
   if (!found.length) return "nothing answers at 0x5a / 0x5b on I2C3 (PA8 SCL, PC9 SDA): click seated on mikroBUS 3? power, nWAKE (PE5), I2C pull-ups";
   const p = found[0];
   if (p.addr !== d.addr) return `CCS811 at ${hex(p.addr)} but the devicetree says ${hex(d.addr)}: fix reg in boards/stm32f4_disco.overlay (or the ADDR jumper)`;
   if (p.hw_id !== 0x81) return `device at ${hex(p.addr)} is not a CCS811 (hw_id ${hex(p.hw_id)})`;
   if (!(p.status & 0x10)) return "CCS811 without valid application firmware (APP_VALID = 0)";
-  return "CCS811 answers: see the ccs811 driver error in the log (boot)";
+  return "CCS811 answers but did not start: see the boot log; the measure retries every 5 s";
 }
 $("#aq-diag").onclick = async () => {
   const out = $("#aq-diag-out");
@@ -1214,7 +1214,8 @@ $("#aq-diag").onclick = async () => {
   const r = await call("airq_diag");
   if (!r.ok) { out.textContent = "diag failed: " + r.error; return; }
   const d = r.rsp, hex = (v, n = 2) => "0x" + v.toString(16).padStart(n, "0");
-  const lines = [`driver init: ${d.init} (${d.init_rc}), devicetree address ${hex(d.addr)}`];
+  const state = d.init === "failed" && d.step ? `failed at '${d.step}' (${d.init_rc})` : `${d.init} (${d.init_rc})`;
+  const lines = [`sensor: ${state}, devicetree address ${hex(d.addr)}`];
   for (const p of d.probe) {
     lines.push(!p.ack ? `  ${hex(p.addr)}: no answer` :
       `  ${hex(p.addr)}: hw_id ${hex(p.hw_id)}, status ${hex(p.status)} (app ${p.status & 0x10 ? "valid" : "MISSING"}, ` +

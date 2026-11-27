@@ -16,12 +16,12 @@
  *   ones). Right after power on it answers eco2 0 / 400 for about 20 s;
  *   a new sensor needs a 48 h burn-in for stable values.
  *
- * Command 1 "diag" (read only): driver state and a raw I2C probe of both
+ * Command 1 "diag" (read only): sensor state and a raw I2C probe of both
  * CCS811 addresses, with nWAKE asserted and nRESET released:
  *
  *   read   request  {}
  *          response {"init": "ok" | "pending" | "failed", "init_rc": -5,
- *                    "addr": 90,
+ *                    "step": "meas_mode", "addr": 90,
  *                    "probe": [{"addr": 90, "ack": true, "hw_id": 129,
  *                               "hw_version": 18, "status": 152,
  *                               "error_id": 0, "fw_app": 4352},
@@ -31,8 +31,15 @@
  *   status bit 4 (0x10) APP_VALID: application firmware present,
  *   bit 7 (0x80) FW_MODE: application running, bit 0 ERROR: see error_id.
  *
- * The driver starts CONFIG_APP_AIRQ_INIT_DELAY_MS after boot
- * (zephyr,deferred-init), so its result reaches the USB log.
+ *   "step": where the last start failed ("" when running): reset,
+ *   hw_id, status, app_valid, app_start, meas_mode, check.
+ *
+ * The sample drives the sensor itself (not the Zephyr ccs811 driver). It
+ * starts it CONFIG_APP_AIRQ_INIT_DELAY_MS after boot, so the result
+ * reaches the USB log: reset, APP_START, MEAS_MODE 1 s, each I2C transfer
+ * retried; 3 tries. After a failure, or 3 failed reads in a row, the
+ * measure command starts it again (at most every 5 s): reseating the
+ * click needs no MCU reset.
  *
  * Errors: a group error.
  */
@@ -52,9 +59,9 @@ enum airq_mgmt_cmd {
 enum airq_mgmt_err {
 	AIRQ_MGMT_ERR_OK = 0,
 	AIRQ_MGMT_ERR_UNKNOWN,
-	AIRQ_MGMT_ERR_NO_DEVICE,	/* driver init failed: see "diag" and the log */
+	AIRQ_MGMT_ERR_NO_DEVICE,	/* sensor not started: see "diag" and the log */
 	AIRQ_MGMT_ERR_IO,		/* I2C read failed */
-	AIRQ_MGMT_ERR_INIT_PENDING,	/* driver not started yet (first seconds) */
+	AIRQ_MGMT_ERR_INIT_PENDING,	/* not started yet (first seconds) */
 };
 
 #endif /* AIRQ_MGMT_H_ */

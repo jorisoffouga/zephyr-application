@@ -120,8 +120,9 @@
 	/*
 	 * mikroBUS 3: Air Quality 3 click, ADDR jumper on 0 = 0x5a (0x5b if
 	 * the jumper is on 1: "smp_client.py airq --diag" shows which one
-	 * answers). Deferred init: src/airq_mgmt.c initializes the driver about
-	 * 2.5 s after boot, when the USB log is up, and logs the result.
+	 * answers). src/airq_mgmt.c drives the sensor itself (CONFIG_CCS811=n)
+	 * and starts it about 2.5 s after boot, when the USB log is up;
+	 * zephyr,deferred-init keeps the Zephyr driver off if it is enabled.
 	 */
 	ccs811: ccs811@5a {
 		compatible = "ams,ccs811";

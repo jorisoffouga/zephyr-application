@@ -342,7 +342,7 @@ def airq_hint(d):
     """Explain an airq diag answer (include/airq_mgmt.h)."""
     found = [p for p in d["probe"] if p.get("ack")]
     if d["init"] == "ok":
-        return "driver running"
+        return "sensor running"
     if not found:
         return ("nothing answers at 0x5a / 0x5b on I2C3 (PA8 SCL, PC9 SDA): click "
                 "seated on mikroBUS 3? power, nWAKE (PE5), I2C pull-ups")
@@ -354,12 +354,14 @@ def airq_hint(d):
         return f"device at 0x{p['addr']:02x} is not a CCS811 (hw_id 0x{p['hw_id']:02x})"
     if not p["status"] & 0x10:
         return "CCS811 without valid application firmware (status bit APP_VALID = 0)"
-    return "CCS811 answers: see the ccs811 driver error in the boot log"
+    return "CCS811 answers but did not start: see the boot log; airq measure retries every 5 s"
 
 
 def cmd_airq_diag(smp):
     d = smp.request(OP_READ, GRP_AIRQ, AIRQ_DIAG)
-    print(f"driver init: {d['init']} ({d['init_rc']}), devicetree address 0x{d['addr']:02x}")
+    state = (f"failed at '{d['step']}' ({d['init_rc']})" if d["init"] == "failed" and d.get("step")
+             else f"{d['init']} ({d['init_rc']})")
+    print(f"sensor: {state}, devicetree address 0x{d['addr']:02x}")
     for p in d["probe"]:
         if not p.get("ack"):
             print(f"  0x{p['addr']:02x}: no answer")

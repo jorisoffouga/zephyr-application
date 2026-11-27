@@ -4,18 +4,18 @@
  * Custom MCUmgr group: Air Quality 3 click (CCS811). Protocol in
  * include/airq_mgmt.h.
  *
- * The ccs811 node has zephyr,deferred-init: the driver starts from a
- * delayed work item, once the USB log is up, so a failure is visible in
+ * The sensor is driven directly over I2C (see sensor_start()), from a
+ * delayed work item once the USB log is up, so a failure is visible in
  * the log with the I2C probe that explains it.
  */
 
 #include <errno.h>
+#include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
-#include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
@@ -41,14 +41,35 @@ LOG_MODULE_REGISTER(airq, CONFIG_APP_LOG_LEVEL);
 #define CCS811_ADDR_LOW		0x5A
 #define CCS811_ADDR_HIGH	0x5B
 
-static const struct device *const ccs811 = DEVICE_DT_GET(CCS811_NODE);
 static const struct device *const i2c_bus = DEVICE_DT_GET(DT_BUS(CCS811_NODE));
 static const struct gpio_dt_spec wake = GPIO_DT_SPEC_GET_OR(CCS811_NODE, wake_gpios, {0});
 static const struct gpio_dt_spec nreset = GPIO_DT_SPEC_GET_OR(CCS811_NODE, reset_gpios, {0});
+static const uint16_t addr = DT_REG_ADDR(CCS811_NODE);
 
+#define REG_MEAS_MODE		0x01
+#define REG_ALG_RESULT_DATA	0x02
+#define REG_APP_START		0xF4
+#define STATUS_ERROR		BIT(0)
+#define STATUS_DATA_READY	BIT(3)
+#define STATUS_APP_VALID	BIT(4)
+#define STATUS_FW_MODE		BIT(7)
+#define MEAS_MODE_1S		0x10	/* constant power, one result per second */
+
+#define XFER_TRIES		3
+#define INIT_TRIES		3
+#define REINIT_PERIOD_MS	5000
+#define FAILS_BEFORE_REINIT	3
+
+/* I2C and sensor state: SMP work queue (measure, diag) and system work queue (init) */
+static K_MUTEX_DEFINE(lock);
 static volatile bool init_done;
-static volatile int init_rc;
+static int init_rc;
+static const char *init_step = "";
+static bool ready;
+static int64_t last_init_ms;
+static int fails;
 static bool no_device_logged;
+static uint16_t last_eco2, last_tvoc;
 
 struct probe {
 	uint8_t addr;
@@ -60,36 +81,178 @@ struct probe {
 	uint16_t fw_app;
 };
 
-/* raw probe of one address, with nWAKE asserted and nRESET released */
-static void probe_addr(uint8_t addr, struct probe *p)
+/*
+ * The CCS811 is driven here, not with the Zephyr ccs811 driver: on this
+ * board the driver init always failed on its last status read (I2C
+ * timeout right after the MEAS_MODE write) and a failed device_init()
+ * cannot be retried. Each transfer is retried, with pauses after the
+ * commands, and the whole start is retried.
+ */
+static int reg_read(uint8_t reg, uint8_t *buf, size_t len)
 {
-	uint8_t fw[2] = { 0 };
+	int rc = -EIO;
 
-	*p = (struct probe){ .addr = addr };
-
-	if (!device_is_ready(i2c_bus)) {
-		return;
+	for (int i = 0; i < XFER_TRIES; i++) {
+		rc = i2c_burst_read(i2c_bus, addr, reg, buf, len);
+		if (rc == 0) {
+			break;
+		}
+		k_msleep(5);
 	}
+	return rc;
+}
 
-	if (nreset.port && gpio_is_ready_dt(&nreset)) {
-		(void)gpio_pin_configure_dt(&nreset, GPIO_OUTPUT_INACTIVE);
+static int reg_write(uint8_t reg, const uint8_t *data, size_t len)
+{
+	uint8_t msg[1 + 4];
+	int rc = -EIO;
+
+	msg[0] = reg;
+	if (len > 0) {
+		memcpy(&msg[1], data, len);
 	}
+	for (int i = 0; i < XFER_TRIES; i++) {
+		rc = i2c_write(i2c_bus, msg, 1 + len, addr);
+		if (rc == 0) {
+			break;
+		}
+		k_msleep(5);
+	}
+	return rc;
+}
+
+static void pins_on(void)
+{
+	/* nWAKE stays asserted: the sensor always listens on I2C */
 	if (wake.port && gpio_is_ready_dt(&wake)) {
 		(void)gpio_pin_configure_dt(&wake, GPIO_OUTPUT_ACTIVE);
 		k_usleep(100);	/* t_AWAKE 50 us */
 	}
+	if (nreset.port && gpio_is_ready_dt(&nreset)) {
+		(void)gpio_pin_configure_dt(&nreset, GPIO_OUTPUT_INACTIVE);
+	}
+}
 
-	p->ack = i2c_reg_read_byte(i2c_bus, addr, REG_HW_ID, &p->hw_id) == 0;
-	if (p->ack) {
-		(void)i2c_reg_read_byte(i2c_bus, addr, REG_HW_VERSION, &p->hw_version);
-		(void)i2c_reg_read_byte(i2c_bus, addr, REG_STATUS, &p->status);
-		(void)i2c_reg_read_byte(i2c_bus, addr, REG_ERROR_ID, &p->error_id);
-		(void)i2c_burst_read(i2c_bus, addr, REG_FW_APP_VERSION, fw, sizeof(fw));
-		p->fw_app = sys_get_be16(fw);
+/* one start: reset, application mode, measurement mode. 0 or -errno, *step set */
+static int sensor_start(const char **step)
+{
+	uint8_t v, mode = MEAS_MODE_1S;
+	uint8_t fw[2];
+	int rc;
+
+	pins_on();
+	if (nreset.port && gpio_is_ready_dt(&nreset)) {
+		*step = "reset";
+		(void)gpio_pin_set_dt(&nreset, 1);
+		k_msleep(1);		/* t_RESET 15 us */
+		(void)gpio_pin_set_dt(&nreset, 0);
+	}
+	k_msleep(20);			/* t_START */
+
+	*step = "hw_id";
+	rc = reg_read(REG_HW_ID, &v, 1);
+	if (rc != 0) {
+		return rc;
+	}
+	if (v != CCS811_HW_ID) {
+		return -ENODEV;
 	}
 
-	if (wake.port && gpio_is_ready_dt(&wake)) {
-		(void)gpio_pin_set_dt(&wake, 0);
+	*step = "status";
+	rc = reg_read(REG_STATUS, &v, 1);
+	if (rc != 0) {
+		return rc;
+	}
+	if (!(v & STATUS_APP_VALID)) {
+		*step = "app_valid";
+		return -ENOEXEC;
+	}
+
+	if (!(v & STATUS_FW_MODE)) {
+		*step = "app_start";
+		rc = reg_write(REG_APP_START, NULL, 0);
+		if (rc != 0) {
+			return rc;
+		}
+		k_msleep(10);		/* t_APP_START 1 ms */
+		rc = reg_read(REG_STATUS, &v, 1);
+		if (rc != 0) {
+			return rc;
+		}
+		if (!(v & STATUS_FW_MODE)) {
+			return -EIO;
+		}
+	}
+
+	*step = "meas_mode";
+	rc = reg_write(REG_MEAS_MODE, &mode, 1);
+	if (rc != 0) {
+		return rc;
+	}
+	k_msleep(10);
+
+	*step = "check";
+	rc = reg_read(REG_STATUS, &v, 1);
+	if (rc != 0) {
+		return rc;
+	}
+	if (v & STATUS_ERROR) {
+		(void)reg_read(REG_ERROR_ID, &v, 1);
+		LOG_WRN("CCS811 error 0x%02x after MEAS_MODE", v);
+		return -EIO;
+	}
+
+	if (reg_read(REG_FW_APP_VERSION, fw, sizeof(fw)) == 0) {
+		LOG_INF("CCS811 app firmware %u.%u.%u", fw[0] >> 4, fw[0] & 0xf, fw[1]);
+	}
+	*step = "";
+	return 0;
+}
+
+/* lock held */
+static int sensor_init_locked(int tries)
+{
+	int rc = -EIO;
+
+	for (int i = 0; i < tries; i++) {
+		rc = sensor_start(&init_step);
+		if (rc == 0) {
+			break;
+		}
+		LOG_WRN("CCS811 start failed at '%s' (%d), try %d of %d", init_step, rc,
+			i + 1, tries);
+		k_msleep(100);
+	}
+	init_rc = rc;
+	ready = rc == 0;
+	fails = 0;
+	last_init_ms = k_uptime_get();
+	if (ready) {
+		no_device_logged = false;
+		LOG_INF("CCS811 ready at I2C 0x%02x, one result per second", addr);
+	}
+	return rc;
+}
+
+/* raw probe of one address, with nWAKE asserted and nRESET released */
+static void probe_addr(uint8_t a, struct probe *p)
+{
+	uint8_t fw[2] = { 0 };
+
+	*p = (struct probe){ .addr = a };
+
+	if (!device_is_ready(i2c_bus)) {
+		return;
+	}
+	pins_on();
+
+	p->ack = i2c_reg_read_byte(i2c_bus, a, REG_HW_ID, &p->hw_id) == 0;
+	if (p->ack) {
+		(void)i2c_reg_read_byte(i2c_bus, a, REG_HW_VERSION, &p->hw_version);
+		(void)i2c_reg_read_byte(i2c_bus, a, REG_STATUS, &p->status);
+		(void)i2c_reg_read_byte(i2c_bus, a, REG_ERROR_ID, &p->error_id);
+		(void)i2c_burst_read(i2c_bus, a, REG_FW_APP_VERSION, fw, sizeof(fw));
+		p->fw_app = sys_get_be16(fw);
 	}
 }
 
@@ -104,32 +267,40 @@ static void log_probe(const struct probe *p)
 		"(app %s, %s%s), error_id 0x%02x, app fw 0x%04x",
 		p->addr, p->hw_id, p->hw_id == CCS811_HW_ID ? " (CCS811)" : " (not a CCS811)",
 		p->hw_version, p->status,
-		(p->status & BIT(4)) ? "valid" : "MISSING",
-		(p->status & BIT(7)) ? "running" : "boot mode",
-		(p->status & BIT(0)) ? ", ERROR" : "",
+		(p->status & STATUS_APP_VALID) ? "valid" : "MISSING",
+		(p->status & STATUS_FW_MODE) ? "running" : "boot mode",
+		(p->status & STATUS_ERROR) ? ", ERROR" : "",
 		p->error_id, p->fw_app);
 }
 
 static void airq_init_work_fn(struct k_work *work)
 {
 	struct probe p[2];
+	int rc;
 
 	ARG_UNUSED(work);
 
-	init_rc = device_init(ccs811);
-	if (init_rc == -EALREADY) {
-		init_rc = device_is_ready(ccs811) ? 0 : -ENODEV;
-	}
-	init_done = true;
-
-	if (init_rc == 0) {
-		LOG_INF("CCS811 ready at I2C 0x%02x", DT_REG_ADDR(CCS811_NODE));
+	if (!device_is_ready(i2c_bus)) {
+		LOG_ERR("CCS811: I2C bus not ready");
+		init_rc = -ENODEV;
+		init_done = true;
 		return;
 	}
 
-	LOG_ERR("CCS811 init failed (%d), I2C probe:", init_rc);
-	probe_addr(CCS811_ADDR_LOW, &p[0]);
-	probe_addr(CCS811_ADDR_HIGH, &p[1]);
+	k_mutex_lock(&lock, K_FOREVER);
+	rc = sensor_init_locked(INIT_TRIES);
+	init_done = true;
+	if (rc != 0) {
+		probe_addr(CCS811_ADDR_LOW, &p[0]);
+		probe_addr(CCS811_ADDR_HIGH, &p[1]);
+	}
+	k_mutex_unlock(&lock);
+
+	if (rc == 0) {
+		return;
+	}
+
+	LOG_ERR("CCS811 start failed at '%s' (%d), I2C probe:", init_step, rc);
 	log_probe(&p[0]);
 	log_probe(&p[1]);
 
@@ -138,18 +309,19 @@ static void airq_init_work_fn(struct k_work *work)
 	if (found == NULL) {
 		LOG_ERR("hint: nothing answers on I2C3 (PA8 SCL / PC9 SDA): click "
 			"seated on mikroBUS 3? nWAKE (PE5), I2C pull-ups, power");
-	} else if (found->addr != DT_REG_ADDR(CCS811_NODE)) {
+	} else if (found->addr != addr) {
 		LOG_ERR("hint: CCS811 at 0x%02x, devicetree says 0x%02x: fix reg "
 			"in boards/stm32f4_disco.overlay (or the ADDR jumper)",
-			found->addr, DT_REG_ADDR(CCS811_NODE));
+			found->addr, addr);
 	} else if (found->hw_id != CCS811_HW_ID) {
 		LOG_ERR("hint: device at 0x%02x is not a CCS811 (hw_id 0x%02x)",
 			found->addr, found->hw_id);
-	} else if (!(found->status & BIT(4))) {
+	} else if (!(found->status & STATUS_APP_VALID)) {
 		LOG_ERR("hint: CCS811 has no valid application firmware "
 			"(status 0x%02x): it needs a firmware update", found->status);
 	} else {
-		LOG_ERR("hint: CCS811 answers, see the ccs811 driver error above");
+		LOG_ERR("hint: CCS811 answers but did not start: the measure "
+			"command retries every %d s", REINIT_PERIOD_MS / 1000);
 	}
 }
 
@@ -158,49 +330,72 @@ static K_WORK_DELAYABLE_DEFINE(airq_init_work, airq_init_work_fn);
 static int airq_measure(struct smp_streamer *ctxt)
 {
 	zcbor_state_t *zse = ctxt->writer->zs;
-	struct sensor_value eco2, tvoc;
 	uint16_t err = AIRQ_MGMT_ERR_OK;
-	bool fresh = true;
+	bool fresh = false;
+	uint8_t st, data[4];
 	int rc;
 
 	if (!init_done) {
-		err = AIRQ_MGMT_ERR_INIT_PENDING;
-	} else if (init_rc != 0 || !device_is_ready(ccs811)) {
+		return smp_add_cmd_err(zse, AIRQ_MGMT_GROUP_ID, AIRQ_MGMT_ERR_INIT_PENDING) ?
+		       MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
+	}
+
+	k_mutex_lock(&lock, K_FOREVER);
+
+	/* not started (yet), or lost: start again, at most every 5 s */
+	if (!ready && k_uptime_get() - last_init_ms >= REINIT_PERIOD_MS) {
+		(void)sensor_init_locked(1);
+	}
+
+	if (!ready) {
 		err = AIRQ_MGMT_ERR_NO_DEVICE;
 		if (!no_device_logged) {
-			LOG_WRN("measure: no CCS811 (init %d), see the boot log or "
-				"'airq diag'", init_rc);
+			LOG_WRN("measure: CCS811 not started ('%s', %d), see the boot "
+				"log or 'airq --diag'", init_step, init_rc);
 			no_device_logged = true;
 		}
 	} else {
-		/* -EAGAIN: no new result, the driver still holds the last one */
-		rc = sensor_sample_fetch(ccs811);
-		if (rc == -EAGAIN) {
-			fresh = false;
-		} else if (rc != 0) {
+		rc = reg_read(REG_STATUS, &st, 1);
+		if (rc == 0 && (st & STATUS_ERROR)) {
+			(void)reg_read(REG_ERROR_ID, data, 1);
+			LOG_WRN("measure: CCS811 error 0x%02x", data[0]);
+			rc = -EIO;
+		}
+		if (rc == 0 && (st & STATUS_DATA_READY)) {
+			rc = reg_read(REG_ALG_RESULT_DATA, data, sizeof(data));
+			if (rc == 0) {
+				last_eco2 = sys_get_be16(&data[0]);
+				last_tvoc = sys_get_be16(&data[2]);
+				fresh = true;
+			}
+		}
+		if (rc != 0) {
 			err = AIRQ_MGMT_ERR_IO;
 			LOG_WRN("measure: I2C read failed (%d)", rc);
+			if (++fails >= FAILS_BEFORE_REINIT) {
+				LOG_WRN("measure: CCS811 lost, starting it again");
+				ready = false;
+				last_init_ms = 0;
+			}
+		} else {
+			fails = 0;
 		}
 	}
 
-	if (err == AIRQ_MGMT_ERR_OK &&
-	    (sensor_channel_get(ccs811, SENSOR_CHAN_CO2, &eco2) != 0 ||
-	     sensor_channel_get(ccs811, SENSOR_CHAN_VOC, &tvoc) != 0)) {
-		err = AIRQ_MGMT_ERR_IO;
-	}
+	k_mutex_unlock(&lock);
 
 	if (err != AIRQ_MGMT_ERR_OK) {
 		return smp_add_cmd_err(zse, AIRQ_MGMT_GROUP_ID, err) ?
 		       MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
 	}
 
-	LOG_DBG("eCO2 %d ppm, TVOC %d ppb%s", eco2.val1, tvoc.val1,
+	LOG_DBG("eCO2 %u ppm, TVOC %u ppb%s", last_eco2, last_tvoc,
 		fresh ? "" : " (no new result)");
 
 	return (zcbor_tstr_put_lit(zse, "eco2") &&
-		zcbor_uint32_put(zse, eco2.val1) &&
+		zcbor_uint32_put(zse, last_eco2) &&
 		zcbor_tstr_put_lit(zse, "tvoc") &&
-		zcbor_uint32_put(zse, tvoc.val1) &&
+		zcbor_uint32_put(zse, last_tvoc) &&
 		zcbor_tstr_put_lit(zse, "fresh") &&
 		zcbor_bool_put(zse, fresh)) ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
 }
@@ -227,20 +422,23 @@ static int airq_diag(struct smp_streamer *ctxt)
 {
 	zcbor_state_t *zse = ctxt->writer->zs;
 	struct probe p[2];
-	const char *init = !init_done ? "pending" : (init_rc == 0 ? "ok" : "failed");
+	const char *init = !init_done ? "pending" : (ready ? "ok" : "failed");
 	bool ok;
 
-	/* with a running driver, the probe only reads registers */
+	/* the probe only reads registers: it does not disturb a running sensor */
+	k_mutex_lock(&lock, K_FOREVER);
 	probe_addr(CCS811_ADDR_LOW, &p[0]);
 	probe_addr(CCS811_ADDR_HIGH, &p[1]);
+	k_mutex_unlock(&lock);
 	log_probe(&p[0]);
 	log_probe(&p[1]);
 
 	ok = zcbor_tstr_put_lit(zse, "init") &&
 	     zcbor_tstr_put_term(zse, init, sizeof("pending")) &&
-	     zcbor_tstr_put_lit(zse, "init_rc") && zcbor_int32_put(zse, init_rc) &&
-	     zcbor_tstr_put_lit(zse, "addr") &&
-	     zcbor_uint32_put(zse, DT_REG_ADDR(CCS811_NODE)) &&
+	     zcbor_tstr_put_lit(zse, "init_rc") && zcbor_int32_put(zse, ready ? 0 : init_rc) &&
+	     zcbor_tstr_put_lit(zse, "step") &&
+	     zcbor_tstr_put_term(zse, ready ? "" : init_step, sizeof("meas_mode")) &&
+	     zcbor_tstr_put_lit(zse, "addr") && zcbor_uint32_put(zse, addr) &&
 	     zcbor_tstr_put_lit(zse, "probe") &&
 	     zcbor_list_start_encode(zse, 2) &&
 	     encode_probe(zse, &p[0]) && encode_probe(zse, &p[1]) &&

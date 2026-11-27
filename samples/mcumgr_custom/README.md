@@ -172,8 +172,8 @@ expander and bargraph LEDs are SPI writes, which cannot run in an ISR.
 
 ## The air quality protocol (group 66)
 
-`include/airq_mgmt.h`, `src/airq_mgmt.c`, Zephyr `ams,ccs811` sensor
-driver (one measurement per second).
+`include/airq_mgmt.h`, `src/airq_mgmt.c`: the CCS811 driven directly
+over I2C3 (one measurement per second).
 
 | op    | command     | request | response |
 |-------|-------------|---------|----------|
@@ -184,19 +184,24 @@ driver (one measurement per second).
 * The CCS811 gives eCO2 400 / TVOC 0 for about 20 s after power on, and
   needs a 48 h burn-in for stable values. No temperature / humidity
   compensation (the click has no such sensor).
-* Errors: 2 `NO_DEVICE` (driver init failed), 3 `IO`, 4 `INIT_PENDING`
+* Errors: 2 `NO_DEVICE` (sensor not started), 3 `IO`, 4 `INIT_PENDING`
   (first seconds after boot).
-* The driver has `zephyr,deferred-init`: it starts
-  `CONFIG_APP_AIRQ_INIT_DELAY_MS` (2.5 s) after boot, when the USB log is
-  up. A failure is logged with an I2C probe and a hint. `device_init()`
-  runs once: reset the MCU to try again.
-* Command 1 `diag` (read): driver state and a raw I2C probe of 0x5a and
-  0x5b with nWAKE asserted (HW_ID, STATUS, ERROR_ID, app firmware
-  version):
+* Not the Zephyr `ccs811` driver (`CONFIG_CCS811=n`): on this board its
+  init always failed on its last status read (an I2C timeout right after
+  the MEAS_MODE write), and a failed `device_init()` cannot be retried.
+  The sample starts the sensor itself `CONFIG_APP_AIRQ_INIT_DELAY_MS`
+  (2.5 s) after boot, when the USB log is up: reset, APP_START,
+  MEAS_MODE, with pauses and retried transfers, 3 tries. A failure is
+  logged with the step, an I2C probe and a hint. Afterwards `measure`
+  starts it again at most every 5 s (also after 3 failed reads in a
+  row): reseating the click needs no reset. nWAKE stays asserted.
+* Command 1 `diag` (read): sensor state, the step where the start failed,
+  and a raw I2C probe of 0x5a and 0x5b with nWAKE asserted (HW_ID,
+  STATUS, ERROR_ID, app firmware version):
 
   ```sh
   $C airq --diag
-  driver init: failed (-5), devicetree address 0x5a
+  sensor: failed at 'hw_id' (-5), devicetree address 0x5a
     0x5a: no answer
     0x5b: hw_id 0x81, hw_version 0x12, status 0x10 (app valid, boot mode), …
   => CCS811 at 0x5b but the devicetree says 0x5a: fix reg in boards/stm32f4_disco.overlay
