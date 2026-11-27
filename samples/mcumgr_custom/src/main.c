@@ -11,11 +11,15 @@
  *     brightness
  *   - 66 "airq" (src/airq_mgmt.c): Air Quality 3 click eCO2 / TVOC
  *   - 67 "pattern" (src/pattern_mgmt.c): LED patterns run by the firmware
+ *   - 68 "alcohol" (src/alcohol_mgmt.c): Alcohol click voltage
+ *   - 69 "eeprom" (src/eeprom_mgmt.c): EEPROM click access, LED settings
+ *   Each click board group is built only when its devicetree node is there.
  *
  * At boot LED 0 blinks at CONFIG_APP_BOOT_BLINK_MS, so the running image
- * is visible. If MCUboot started this image in test mode, the image runs
- * its self-test (the board LEDs; a missing click board does not fail it)
- * and confirms itself (never, with
+ * is visible. The other LEDs and the patterns come back from the EEPROM
+ * click (src/app_store.c), when it is there. If MCUboot started this
+ * image in test mode, the image runs its self-test (the board LEDs; a
+ * missing click board does not fail it) and confirms itself (never, with
  * CONFIG_APP_SIMULATE_BAD_IMAGE: MCUboot then reverts it at the next reset).
  */
 
@@ -25,6 +29,7 @@
 #include <zephyr/logging/log.h>
 #include <app_version.h>
 
+#include "app_store.h"
 #include "led_ctrl.h"
 
 LOG_MODULE_REGISTER(app, CONFIG_APP_LOG_LEVEL);
@@ -65,6 +70,9 @@ int main(void)
 	}
 
 	(void)led_ctrl_set(0, LED_MODE_BLINK, CONFIG_APP_BOOT_BLINK_MS);
+
+	/* LED modes and patterns saved in the EEPROM click (not LED 0) */
+	(void)app_store_restore();
 
 	/* everything else runs from the SMP work queue and the LED work queue */
 	return 0;

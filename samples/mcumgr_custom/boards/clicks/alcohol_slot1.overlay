@@ -1,0 +1,49 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Alcohol click (MIKROE-1586, MQ-3) on mikroBUS 1, instead of the EEPROM
+ * click: analog output on AN = PC1 (ADC1 IN11). Enables the "alcohol"
+ * group. Needs CONFIG_ADC (alcohol_slot1.conf):
+ *
+ *   west build ... -- \
+ *     -DEXTRA_DTC_OVERLAY_FILE=boards/clicks/alcohol_slot1.overlay \
+ *     -DEXTRA_CONF_FILE=boards/clicks/alcohol_slot1.conf
+ *
+ * WARNING: the click runs on 5 V and AN can rise above 3.3 V, more than
+ * the ADC pin takes: see README.md, "Click boards".
+ */
+
+#include <zephyr/dt-bindings/adc/adc.h>
+
+/ {
+	zephyr,user {
+		io-channels = <&adc1 11>;
+		io-channel-names = "alcohol";
+	};
+};
+
+/* mikroBUS 1 holds one click */
+&eeprom {
+	status = "disabled";
+};
+
+/*
+ * The board default ADC pins (PA1, PA6) are dropped: PA1 is the mikroBUS 1
+ * PWM pin. The MQ-3 load resistor is up to tens of kOhm: longest sampling
+ * time (480 cycles) to charge the ADC.
+ */
+&adc1 {
+	pinctrl-0 = <&adc1_in11_pc1>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	channel@b {
+		reg = <11>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_TICKS, 480)>;
+		zephyr,resolution = <12>;
+	};
+};

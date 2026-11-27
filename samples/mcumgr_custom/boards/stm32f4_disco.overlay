@@ -23,22 +23,23 @@
  * log"). Logs never mix with the SMP frames.
  *
  * Click boards of this setup:
- *   mikroBUS 1: Alcohol click (MIKROE-1586, MQ-3): analog, AN = PC1
- *               (ADC1 IN11). The Air Quality 3 click (CCS811, I2C1 @ 0x5a)
- *               node is kept, disabled: swap the two status lines below
- *               to go back to it.
+ *   mikroBUS 1: EEPROM click (MIKROE-1200): ST 24C08, 1 KiB, I2C1 @ 0x50..0x53
+ *               (one address per 256-byte block), WP = PWM pin PA1
  *   mikroBUS 2: MCP23S08 GPIO expander (SPI2) driving 8 LEDs, active low
- *   mikroBUS 3: BarGraph click (MIKROE-1423): two 74HC595 (SPI3), 10 LED
- *               segments, PWM pin = output enable (brightness)
+ *   mikroBUS 3: Air Quality 3 click (CCS811), I2C3 @ 0x5a
+ *
+ * Other click boards, as extra overlays (boards/clicks/, see README.md):
+ *   bargraph_slot3.overlay  BarGraph click on mikroBUS 3 (instead of the
+ *                           Air Quality 3 click)
+ *   alcohol_slot1.overlay   Alcohol click on mikroBUS 1 (instead of the
+ *                           EEPROM click), with alcohol_slot1.conf
  *
  * LED indexes of the "led" SMP group, in this order:
  *   0..3   board LEDs (led0..led3 aliases: green, orange, red, blue)
  *   4..11  expander_leds (exp0..exp7)
- *   12..21 bargraph_leds (bar0..bar9)
+ *   then   bargraph_leds (bar0..bar9) with bargraph_slot3.overlay
  */
 
-#include <zephyr/dt-bindings/adc/adc.h>
-#include <zephyr/dt-bindings/pwm/pwm.h>
 #include "stm32f4_disco_partitions.dtsi"
 
 / {
@@ -49,10 +50,8 @@
 		zephyr,shell-uart = &cdc_acm_log;
 	};
 
-	/* mikroBUS 1: Alcohol click AN pin, read by src/alcohol_mgmt.c */
-	zephyr,user {
-		io-channels = <&adc1 11>;
-		io-channel-names = "alcohol";
+	aliases {
+		eeprom-0 = &eeprom;
 	};
 
 	/*
@@ -72,42 +71,6 @@
 		exp-led-6 { gpios = <&mcp23s08 6 GPIO_ACTIVE_LOW>; label = "exp6"; };
 		exp-led-7 { gpios = <&mcp23s08 7 GPIO_ACTIVE_LOW>; label = "exp7"; };
 	};
-
-	/*
-	 * mikroBUS 3: BarGraph click segments on the 16 outputs of the two
-	 * chained 74HC595. Assumed: segment n on output n, lit when high.
-	 * If the segments light in the wrong order, change the pin numbers
-	 * here; if they are inverted, use GPIO_ACTIVE_LOW.
-	 */
-	bargraph_leds: bargraph-leds {
-		compatible = "gpio-leds";
-
-		bar-0 { gpios = <&bargraph_sr 0 GPIO_ACTIVE_HIGH>; label = "bar0"; };
-		bar-1 { gpios = <&bargraph_sr 1 GPIO_ACTIVE_HIGH>; label = "bar1"; };
-		bar-2 { gpios = <&bargraph_sr 2 GPIO_ACTIVE_HIGH>; label = "bar2"; };
-		bar-3 { gpios = <&bargraph_sr 3 GPIO_ACTIVE_HIGH>; label = "bar3"; };
-		bar-4 { gpios = <&bargraph_sr 4 GPIO_ACTIVE_HIGH>; label = "bar4"; };
-		bar-5 { gpios = <&bargraph_sr 5 GPIO_ACTIVE_HIGH>; label = "bar5"; };
-		bar-6 { gpios = <&bargraph_sr 6 GPIO_ACTIVE_HIGH>; label = "bar6"; };
-		bar-7 { gpios = <&bargraph_sr 7 GPIO_ACTIVE_HIGH>; label = "bar7"; };
-		bar-8 { gpios = <&bargraph_sr 8 GPIO_ACTIVE_HIGH>; label = "bar8"; };
-		bar-9 { gpios = <&bargraph_sr 9 GPIO_ACTIVE_HIGH>; label = "bar9"; };
-	};
-
-	/*
-	 * mikroBUS 3 PWM pin: segment enable. Checked on the board: the
-	 * segments are on while the pin is high (normal polarity), so the
-	 * pulse width is the time the segments are on (brightness).
-	 * If 100 % gives the darkest bar, use PWM_POLARITY_INVERTED.
-	 */
-	bargraph_pwm_leds {
-		compatible = "pwm-leds";
-
-		bargraph_oe: bargraph-oe {
-			pwms = <&bargraph_pwm 4 PWM_USEC(500) PWM_POLARITY_NORMAL>;
-			label = "bargraph /OE";
-		};
-	};
 };
 
 /*
@@ -121,22 +84,23 @@
 	status = "okay";
 
 	/*
-	 * mikroBUS 1: Air Quality 3 click, ADDR jumper on 0x5a (0x5b if the
-	 * jumper is on 1: "smp_client.py airq diag" shows which one answers).
-	 * Deferred init: src/airq_mgmt.c initializes the driver about 2.5 s
-	 * after boot, when the USB log is up, and logs the result.
-	 * Disabled: the Alcohol click is on mikroBUS 1. To use this click
-	 * again: status "okay" here, and remove zephyr,user io-channels
-	 * (the alcohol group then leaves the build, the airq group comes back).
+	 * mikroBUS 1: EEPROM click, ST M24C08 (8 Kbit): 4 blocks of 256 bytes,
+	 * block n at I2C address 0x50 + n (the driver picks the address from
+	 * the offset). ADDR jumper (E2) assumed on 0: 0x50..0x53; on 1 it is
+	 * 0x54..0x57, use reg = <0x54>.
+	 * WP (write control, high = protected) assumed on the mikroBUS PWM pin
+	 * PA1: the driver drives it low only while it writes. If the writes
+	 * fail ("eeprom write ... IO"), check that pin on the click.
+	 * src/app_store.c keeps the LED settings in the last block (0x300).
 	 */
-	ccs811: ccs811@5a {
-		compatible = "ams,ccs811";
-		reg = <0x5a>;
-		status = "disabled";
-		zephyr,deferred-init;
-		reset-gpios = <&gpioe 10 GPIO_ACTIVE_LOW>;	/* RST */
-		wake-gpios = <&gpiob 12 GPIO_ACTIVE_LOW>;	/* CS */
-		irq-gpios = <&gpioe 7 GPIO_ACTIVE_LOW>;		/* INT */
+	eeprom: eeprom@50 {
+		compatible = "st,m24xxx", "atmel,at24";
+		reg = <0x50>;
+		size = <1024>;
+		pagesize = <16>;
+		address-width = <8>;
+		timeout = <5>;
+		wp-gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;
 	};
 };
 
@@ -145,27 +109,31 @@
 };
 
 /*
- * mikroBUS 1 AN: PC1 = ADC1 IN11. The board default pins (PA1, PA6) are
- * dropped: PA1 is the mikroBUS 1 PWM pin. The MQ-3 load resistor is up to
- * tens of kOhm: longest sampling time (480 cycles) to charge the ADC.
+ * mikroBUS 3 and 4 I2C: I2C3 on PA8 (SCL) / PC9 (SDA).
  */
-&adc1 {
-	pinctrl-0 = <&adc1_in11_pc1>;
+&i2c3 {
+	pinctrl-0 = <&i2c3_scl_pa8 &i2c3_sda_pc9>;
 	pinctrl-names = "default";
-	#address-cells = <1>;
-	#size-cells = <0>;
+	clock-frequency = <I2C_BITRATE_STANDARD>;
 	status = "okay";
 
-	channel@b {
-		reg = <11>;
-		zephyr,gain = "ADC_GAIN_1";
-		zephyr,reference = "ADC_REF_INTERNAL";
-		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_TICKS, 480)>;
-		zephyr,resolution = <12>;
+	/*
+	 * mikroBUS 3: Air Quality 3 click, ADDR jumper on 0 = 0x5a (0x5b if
+	 * the jumper is on 1: "smp_client.py airq --diag" shows which one
+	 * answers). Deferred init: src/airq_mgmt.c initializes the driver about
+	 * 2.5 s after boot, when the USB log is up, and logs the result.
+	 */
+	ccs811: ccs811@5a {
+		compatible = "ams,ccs811";
+		reg = <0x5a>;
+		zephyr,deferred-init;
+		reset-gpios = <&gpioe 4 GPIO_ACTIVE_LOW>;	/* RST */
+		wake-gpios = <&gpioe 5 GPIO_ACTIVE_LOW>;	/* CS */
+		irq-gpios = <&gpiod 2 GPIO_ACTIVE_LOW>;		/* INT */
 	};
 };
 
-/* same peripheral as SPI3 (BarGraph), at the same address */
+/* same peripheral as SPI3 (BarGraph click overlay), at the same address */
 &i2s3 {
 	status = "disabled";
 };
@@ -193,38 +161,5 @@
 		ngpios = <8>;
 		/* if the expander RESET pin is wired to mikroBUS 2 RST: */
 		/* reset-gpios = <&gpioe 12 GPIO_ACTIVE_LOW>; */
-	};
-};
-
-/*
- * mikroBUS 3: BarGraph click on SPI3, CS PE5 = 74HC595 latch (RCLK): the
- * outputs update on the rising edge at the end of each transfer.
- */
-&spi3 {
-	pinctrl-0 = <&spi3_sck_pb3 &spi3_miso_pb4 &spi3_mosi_pb5>;
-	pinctrl-names = "default";
-	cs-gpios = <&gpioe 5 GPIO_ACTIVE_LOW>;
-	status = "okay";
-
-	bargraph_sr: gpio@0 {
-		compatible = "ti,sn74hc595";
-		reg = <0>;
-		spi-max-frequency = <1000000>;
-		gpio-controller;
-		#gpio-cells = <2>;
-		ngpios = <16>;
-		reset-gpios = <&gpioe 4 GPIO_ACTIVE_LOW>;	/* RST = /MR */
-	};
-};
-
-/* mikroBUS 3 PWM: TIM3_CH4 on PB1. TIM3 is 16 bit: 84 MHz / 84 = 1 MHz */
-&timers3 {
-	st,prescaler = <83>;
-	status = "okay";
-
-	bargraph_pwm: pwm {
-		pinctrl-0 = <&tim3_ch4_pb1>;
-		pinctrl-names = "default";
-		status = "okay";
 	};
 };

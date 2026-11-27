@@ -222,6 +222,31 @@ pre.diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, M
   background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin: 10px 0 0; }
 
 /* log */
+.ee-card { margin-top: 16px; }
+.ee-top { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 12px; }
+.ee-top .status { flex: 1; min-width: 220px; font-size: 13px; }
+.ee-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.ee-form input[type=text], .ee-form select {
+  font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+}
+.ee-form .off { width: 80px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ee-form .data { flex: 1; min-width: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.hexwrap { overflow-x: auto; max-height: 360px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.hex { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 6px 10px;
+       white-space: pre; min-width: max-content; }
+.hex .a { color: var(--muted); }
+.hex b { font-weight: 400; cursor: pointer; padding: 0 1px; border-radius: 3px; }
+.hex b:hover { background: var(--surface-2); outline: 1px solid var(--line); }
+.hex b.ff { color: var(--muted); opacity: .55; }
+.hex b.st { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.hex b.sel { outline: 2px solid var(--accent); }
+.hex .t { color: var(--muted); }
+.legend { font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px;
+            background: color-mix(in srgb, var(--accent) 30%, transparent); }
+button.danger.armed { background: var(--bad); color: #fff; border-color: var(--bad); }
+
 .log-card { margin-top: 16px; }
 .logbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .lvl { border-radius: 999px; padding: 3px 10px; font-size: 12px; }
@@ -337,7 +362,7 @@ pre.diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, M
     </section>
 
     <section class="card" id="card-aq">
-      <div class="card-head"><h2>Air Quality 3</h2><span class="where">mikroBUS 1 · CCS811 · I2C1</span></div>
+      <div class="card-head"><h2>Air Quality 3</h2><span class="where">mikroBUS 3 · CCS811 · I2C3</span></div>
       <div class="body">
         <div class="aq">
           <div class="metric">
@@ -389,6 +414,28 @@ pre.diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, M
       </div>
     </section>
   </div>
+
+  <section class="card ee-card" id="card-ee" hidden>
+    <div class="card-head"><h2>EEPROM</h2><span class="where" id="ee-where">mikroBUS 1 · 24C08 · I2C1 0x50</span></div>
+    <div class="ee-top">
+      <div class="status"><span class="dot" id="ee-dot" style="display:inline-block;margin-right:6px"></span><span id="ee-status">–</span></div>
+      <label class="kv"><input type="checkbox" id="ee-autosave"> autosave</label>
+      <button id="ee-save" title="Write the LED modes and patterns now">Save settings</button>
+      <button id="ee-restore" title="Apply the stored settings (LED 0 excepted)">Restore</button>
+      <button id="ee-clear" class="danger" title="Next boot: all LEDs off">Clear settings</button>
+    </div>
+    <div class="ee-form">
+      <label class="kv">offset <input type="text" class="off" id="ee-off" value="0x000" spellcheck="false"></label>
+      <select id="ee-fmt"><option value="hex">hex bytes</option><option value="text">text</option></select>
+      <input type="text" class="data" id="ee-data" placeholder="48 65 6c 6c 6f" spellcheck="false">
+      <button class="primary" id="ee-write">Write</button>
+      <button id="ee-read">Read all</button>
+      <button id="ee-erase" class="danger" title="Fill the whole EEPROM with 0xff, settings included">Erase all</button>
+    </div>
+    <div class="err"></div>
+    <div class="hexwrap"><div class="hex" id="ee-hex"><span class="a">press “Read all”</span></div></div>
+    <div class="legend"><span><i></i>LED settings record (written by the firmware)</span><span>click a byte: its offset goes to the form</span><span id="ee-size"></span></div>
+  </section>
 
   <section class="card fw-card" id="card-fw">
     <div class="card-head"><h2>Firmware update</h2><span class="where">MCUmgr image group · MCUboot swap with rollback</span></div>
@@ -734,6 +781,116 @@ async function setAlc(body) {
 $("#alc-cal").onclick = () => setAlc({ calibrate: true });
 $("#alc-clear").onclick = () => setAlc({ baseline_mv: 0 });
 
+// ---------------------------------------------------------------- EEPROM
+let ee = { info: null, data: null, sel: -1 };
+function eeHex(v, n = 3) { return "0x" + v.toString(16).padStart(n, "0"); }
+function renderStore(st, err) {
+  setCardError("#card-ee", err);
+  if (!st) { $("#ee-status").textContent = err ? "no answer" : "–"; $("#ee-dot").className = "dot"; return; }
+  $("#ee-dot").className = "dot " + (st.last_rc ? "bad" : st.valid ? "ok" : "warn");
+  $("#ee-status").textContent = (st.valid ? "LED settings stored" : "no LED settings stored") +
+    (st.restored ? " · restored at boot" : "") + (st.pending ? " · saving soon…" : "") +
+    ` · ${st.saves} save${st.saves === 1 ? "" : "s"} since boot` +
+    (st.last_rc ? ` · last EEPROM error ${st.last_rc} (write protect?)` : "");
+  if (document.activeElement !== $("#ee-autosave")) $("#ee-autosave").checked = st.autosave;
+}
+function renderHex() {
+  const box = $("#ee-hex");
+  if (!ee.data) return;
+  const st0 = ee.info && ee.info.store_off !== undefined ? ee.info.store_off : -1;
+  const st1 = st0 >= 0 ? st0 + ee.info.store_size : -1;
+  const rows = [];
+  for (let r = 0; r < ee.data.length; r += 16) {
+    let hex = "", txt = "";
+    for (let i = r; i < r + 16 && i < ee.data.length; i++) {
+      const v = ee.data[i];
+      const cls = [v === 0xff ? "ff" : "", i >= st0 && i < st1 ? "st" : "", i === ee.sel ? "sel" : ""].filter(Boolean).join(" ");
+      hex += `<b data-o="${i}"${cls ? ` class="${cls}"` : ""}>${v.toString(16).padStart(2, "0")}</b>` + (i % 16 === 7 ? "  " : " ");
+      txt += v >= 32 && v < 127 ? String.fromCharCode(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]) : ".";
+    }
+    rows.push(`<span class="a">${r.toString(16).padStart(4, "0")}</span>  ${hex} <span class="t">${txt}</span>`);
+  }
+  box.innerHTML = rows.join("\n");
+}
+$("#ee-hex").onclick = (e) => {
+  const b = e.target.closest("b[data-o]");
+  if (!b) return;
+  ee.sel = +b.dataset.o;
+  $("#ee-off").value = eeHex(ee.sel);
+  renderHex();
+  $("#ee-data").focus();
+};
+async function eeLoad() {
+  if (!ee.info) {
+    const i = await call("eeprom_info");
+    if (!i.ok) { setCardError("#card-ee", i.error); return; }
+    ee.info = i.info;
+    $("#ee-where").textContent = `mikroBUS 1 · ${i.info.chip} · I2C1 0x50`;
+    $("#ee-size").textContent = `${i.info.size} bytes, ${i.info.page}-byte pages` +
+      (i.info.store_off !== undefined ? ` · settings at ${eeHex(i.info.store_off)}..${eeHex(i.info.store_off + i.info.store_size - 1)}` : "");
+  }
+  $("#ee-read").disabled = true;
+  const r = await call("eeprom_read", { off: 0, len: ee.info.size });
+  $("#ee-read").disabled = false;
+  if (!r.ok) { setCardError("#card-ee", r.error); return; }
+  ee.data = Uint8Array.from(r.hex.match(/../g) || [], (h) => parseInt(h, 16));
+  renderHex();
+}
+function eeParse() {
+  const off = parseInt($("#ee-off").value, $("#ee-off").value.trim().toLowerCase().startsWith("0x") ? 16 : 10);
+  if (isNaN(off)) throw new Error("offset: a number, e.g. 0x10 or 16");
+  const raw = $("#ee-data").value;
+  let bytes;
+  if ($("#ee-fmt").value === "text") {
+    bytes = new TextEncoder().encode(raw);
+  } else {
+    const h = raw.replace(/0x/gi, "").replace(/[\s,:]/g, "");
+    if (!/^([0-9a-f]{2})+$/i.test(h)) throw new Error("hex bytes, e.g. 48 65 6c 6c 6f");
+    bytes = Uint8Array.from(h.match(/../g), (x) => parseInt(x, 16));
+  }
+  if (!bytes.length) throw new Error("nothing to write");
+  return { off, bytes };
+}
+$("#ee-fmt").onchange = (e) => { $("#ee-data").placeholder = e.target.value === "text" ? "hello" : "48 65 6c 6c 6f"; };
+$("#ee-write").onclick = async () => {
+  let w;
+  try { w = eeParse(); } catch (e) { toast(e.message); return; }
+  const st0 = ee.info && ee.info.store_off;
+  if (st0 !== undefined && w.off + w.bytes.length > st0 && w.off < st0 + ee.info.store_size)
+    toast("note: this overwrites the LED settings record (the next save rewrites it)");
+  const hex = [...w.bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const r = await call("eeprom_write", { off: w.off, hex });
+  if (!r.ok) { toast("eeprom write: " + r.error); return; }
+  toast(`wrote ${r.len} bytes at ${eeHex(w.off)}`);
+  eeLoad();
+};
+$("#ee-read").onclick = eeLoad;
+function armed(btn, label, run) {       // click twice to confirm
+  if (btn.classList.contains("armed")) {
+    btn.classList.remove("armed"); btn.textContent = label; clearTimeout(btn.timer); run();
+    return;
+  }
+  btn.classList.add("armed"); btn.textContent = "Click again to confirm";
+  btn.timer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = label; }, 3000);
+}
+$("#ee-erase").onclick = () => armed($("#ee-erase"), "Erase all", async () => {
+  const r = await call("eeprom_erase");
+  if (!r.ok) { toast("eeprom erase: " + r.error); return; }
+  toast("EEPROM erased");
+  eeLoad();
+});
+async function eeStore(body, done) {
+  const r = await call("eeprom_store", body);
+  if (!r.ok) { toast("settings: " + r.error); return; }
+  renderStore(r.store);
+  if (done) toast(done);
+  eeLoad();
+}
+$("#ee-save").onclick = () => eeStore({ action: "save" }, "settings saved");
+$("#ee-restore").onclick = () => eeStore({ action: "restore" }, "settings restored");
+$("#ee-clear").onclick = () => armed($("#ee-clear"), "Clear settings", () => eeStore({ action: "clear" }, "settings cleared"));
+$("#ee-autosave").onchange = (e) => eeStore({ autosave: e.target.checked });
+
 function spark(canvas, data, color) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -791,6 +948,13 @@ function applyState(s) {
       setCardError("#card-bar", s.bargraph_error);
       const absent = s.absent || [];
       $("#card-aq").hidden = absent.includes("airq");
+      $("#card-bar").hidden = absent.includes("bargraph");
+      const eeWasHidden = $("#card-ee").hidden;
+      $("#card-ee").hidden = absent.includes("store");
+      if (!$("#card-ee").hidden) {
+        renderStore(s.store, s.store_error);
+        if (eeWasHidden) eeLoad();
+      }
       $("#card-alc").hidden = absent.includes("alcohol");
       if (!absent.includes("alcohol")) {
         renderAlc(s.alcohol);
@@ -892,7 +1056,7 @@ function renderPatterns(rsp) {
         +bar.querySelector(".p-step").value, +bar.querySelector(".p-width").value);
       bar.querySelector(".p-stop").onclick = () => runPattern(bankName, "off");
     }
-    bar.hidden = !p;
+    bar.hidden = !p || p.leds === 0;
     bar.querySelector(".running").textContent = patternActive(bankName)
       ? `▶ ${p.pattern} · ${p.step_ms} ms${["k2000", "chase"].includes(p.pattern) ? " · width " + p.width : ""}` : "";
     syncAnimator(bankName);
@@ -1036,7 +1200,7 @@ function airqHint(d) {
   const hex = (v) => "0x" + v.toString(16).padStart(2, "0");
   if (d.init === "ok") return "driver running";
   if (d.init === "pending") return "driver not started yet (first seconds after boot)";
-  if (!found.length) return "nothing answers at 0x5a / 0x5b on I2C1 (PB8 SCL, PB7 SDA): click seated on mikroBUS 1? power, nWAKE (PB12), I2C pull-ups";
+  if (!found.length) return "nothing answers at 0x5a / 0x5b on I2C3 (PA8 SCL, PC9 SDA): click seated on mikroBUS 3? power, nWAKE (PE5), I2C pull-ups";
   const p = found[0];
   if (p.addr !== d.addr) return `CCS811 at ${hex(p.addr)} but the devicetree says ${hex(d.addr)}: fix reg in boards/stm32f4_disco.overlay (or the ADDR jumper)`;
   if (p.hw_id !== 0x81) return `device at ${hex(p.addr)} is not a CCS811 (hw_id ${hex(p.hw_id)})`;

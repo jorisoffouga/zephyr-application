@@ -1,0 +1,84 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * BarGraph click (MIKROE-1423) on mikroBUS 3, instead of the Air Quality 3
+ * click: two 74HC595 on SPI3 (CS PE5 = latch, RST PE4 = /MR) driving 10
+ * LED segments, PWM pin PB1 (TIM3_CH4) = output enable (brightness).
+ * Enables the "bargraph" group and the bargraph LED bank.
+ *
+ *   west build ... -- \
+ *     -DEXTRA_DTC_OVERLAY_FILE=boards/clicks/bargraph_slot3.overlay
+ */
+
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
+/ {
+	/*
+	 * Segments on the 16 outputs of the two chained 74HC595. Assumed:
+	 * segment n on output n, lit when high. If the segments light in the
+	 * wrong order, change the pin numbers; if inverted, GPIO_ACTIVE_LOW.
+	 */
+	bargraph_leds: bargraph-leds {
+		compatible = "gpio-leds";
+
+		bar-0 { gpios = <&bargraph_sr 0 GPIO_ACTIVE_HIGH>; label = "bar0"; };
+		bar-1 { gpios = <&bargraph_sr 1 GPIO_ACTIVE_HIGH>; label = "bar1"; };
+		bar-2 { gpios = <&bargraph_sr 2 GPIO_ACTIVE_HIGH>; label = "bar2"; };
+		bar-3 { gpios = <&bargraph_sr 3 GPIO_ACTIVE_HIGH>; label = "bar3"; };
+		bar-4 { gpios = <&bargraph_sr 4 GPIO_ACTIVE_HIGH>; label = "bar4"; };
+		bar-5 { gpios = <&bargraph_sr 5 GPIO_ACTIVE_HIGH>; label = "bar5"; };
+		bar-6 { gpios = <&bargraph_sr 6 GPIO_ACTIVE_HIGH>; label = "bar6"; };
+		bar-7 { gpios = <&bargraph_sr 7 GPIO_ACTIVE_HIGH>; label = "bar7"; };
+		bar-8 { gpios = <&bargraph_sr 8 GPIO_ACTIVE_HIGH>; label = "bar8"; };
+		bar-9 { gpios = <&bargraph_sr 9 GPIO_ACTIVE_HIGH>; label = "bar9"; };
+	};
+
+	/*
+	 * PWM pin: segment enable. Checked on the board: the segments are on
+	 * while the pin is high (normal polarity), so the pulse width is the
+	 * time the segments are on (brightness).
+	 */
+	bargraph_pwm_leds {
+		compatible = "pwm-leds";
+
+		bargraph_oe: bargraph-oe {
+			pwms = <&bargraph_pwm 4 PWM_USEC(500) PWM_POLARITY_NORMAL>;
+			label = "bargraph /OE";
+		};
+	};
+};
+
+/* mikroBUS 3 holds one click: RST PE4 and CS PE5 are the BarGraph's now */
+&ccs811 {
+	status = "disabled";
+};
+
+/* CS PE5 = 74HC595 latch (RCLK): the outputs update at the end of each transfer */
+&spi3 {
+	pinctrl-0 = <&spi3_sck_pb3 &spi3_miso_pb4 &spi3_mosi_pb5>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioe 5 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	bargraph_sr: gpio@0 {
+		compatible = "ti,sn74hc595";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+		reset-gpios = <&gpioe 4 GPIO_ACTIVE_LOW>;	/* RST = /MR */
+	};
+};
+
+/* TIM3_CH4 on PB1. TIM3 is 16 bit: 84 MHz / 84 = 1 MHz */
+&timers3 {
+	st,prescaler = <83>;
+	status = "okay";
+
+	bargraph_pwm: pwm {
+		pinctrl-0 = <&tim3_ch4_pb1>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};

@@ -86,6 +86,50 @@ config APP_ALCOHOL_SAMPLES
 	range 1 256
 	default 16
 
+config APP_EEPROM_MGMT
+	bool "Custom MCUmgr group 69: eeprom"
+	default y
+	depends on MCUMGR && EEPROM && $(dt_nodelabel_enabled,eeprom)
+	help
+	  EEPROM click raw access (info, read, write, erase) and the LED
+	  settings store. See include/eeprom_mgmt.h.
+
+config APP_STORE
+	bool "Keep the LED settings in the EEPROM"
+	default y
+	depends on EEPROM && CRC && $(dt_nodelabel_enabled,eeprom)
+	help
+	  LED modes and periods and the bank patterns are saved in the
+	  EEPROM click and restored at boot. See include/app_store.h.
+
+if APP_STORE
+
+config APP_STORE_OFFSET
+	hex "EEPROM offset of the settings record"
+	default 0x300
+	help
+	  Default: the last 256-byte block of the 24C08 (0x300..0x3ff).
+
+config APP_STORE_SIZE
+	int "EEPROM bytes reserved for the settings record"
+	default 256
+
+config APP_STORE_AUTOSAVE
+	bool "Save the settings after each change made over SMP"
+	default y
+	help
+	  Off: only the "eeprom store save" command writes them. Can also be
+	  switched at run time (eeprom group, command store).
+
+config APP_STORE_DELAY_MS
+	int "Delay between the last change and the save, in ms"
+	default 2000
+	help
+	  Changes within this delay give one EEPROM write (the 24C08 takes
+	  about 1 million write cycles per byte).
+
+endif # APP_STORE
+
 config APP_PATTERN_MGMT
 	bool "Custom MCUmgr group 67: pattern"
 	default y

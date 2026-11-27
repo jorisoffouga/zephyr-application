@@ -548,6 +548,7 @@ class App:
             for key, grp, cmd in (("bargraph", smp.GRP_BARGRAPH, smp.BARGRAPH_STATE),
                                   ("airq", smp.GRP_AIRQ, smp.AIRQ_MEASURE),
                                   ("alcohol", smp.GRP_ALCOHOL, smp.ALCOHOL_MEASURE),
+                                  ("store", smp.GRP_EEPROM, smp.EEPROM_STORE),
                                   ("patterns", smp.GRP_PATTERN, smp.PATTERN_STATE)):
                 if key in self.absent:
                     out["absent"].append(key)
@@ -659,6 +660,8 @@ class App:
                          ("bank", "pattern", "step_ms", "width"))
         if name == "alcohol":
             return write(smp.GRP_ALCOHOL, smp.ALCOHOL_MEASURE, ("calibrate", "baseline_mv"))
+        if name.startswith("eeprom_"):
+            return self.eeprom(name[len("eeprom_"):], req)
         if name == "reset":
             r = smp_call(self.link, smp.OP_WRITE, smp.GRP_OS, smp.OS_RESET)
             self.kick(info=True)
@@ -687,6 +690,37 @@ class App:
         if name == "state":
             return {"ok": True, "state": self.read_state()}, 200
         return {"ok": False, "error": f"unknown command {name!r}"}, 404
+
+    def eeprom(self, what, req):
+        """EEPROM click: info / read / write / erase / store (group 69)."""
+        try:
+            if what == "info":
+                return {"ok": True, "info": self.link.request(smp.OP_READ, smp.GRP_EEPROM,
+                                                              smp.EEPROM_INFO)}, 200
+            if what == "read":
+                off, length = int(req.get("off", 0)), int(req.get("len", 1024))
+                data = smp.eeprom_read(self.link, off, length)
+                return {"ok": True, "off": off, "hex": data.hex()}, 200
+            if what == "write":
+                data = bytes.fromhex(req.get("hex", ""))
+                if not data:
+                    return {"ok": False, "error": "no data"}, 400
+                smp.eeprom_write(self.link, int(req.get("off", 0)), data)
+                return {"ok": True, "len": len(data)}, 200
+            if what == "erase":
+                r = self.link.request(smp.OP_WRITE, smp.GRP_EEPROM, smp.EEPROM_ERASE,
+                                      {k: int(req[k]) for k in ("off", "len") if k in req},
+                                      timeout=30)
+                return {"ok": True, **r}, 200
+            if what == "store":
+                body = {k: req[k] for k in ("action", "autosave") if k in req}
+                r = (self.link.request(smp.OP_WRITE, smp.GRP_EEPROM, smp.EEPROM_STORE, body)
+                     if body else self.link.request(smp.OP_READ, smp.GRP_EEPROM, smp.EEPROM_STORE))
+                self.kick()
+                return {"ok": True, "store": r}, 200
+        except (smp.SmpError, ValueError) as e:
+            return {"ok": False, "error": str(e)}, 200
+        return {"ok": False, "error": f"unknown command eeprom_{what}"}, 404
 
     def start_job(self, data, name, confirm):
         if self.job and self.job.is_alive():

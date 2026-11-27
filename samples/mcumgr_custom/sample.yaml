@@ -18,3 +18,9 @@ tests:
     extra_args: EXTRA_CONF_FILE="v2.conf"
   sample.mcumgr_custom.bad:
     extra_args: EXTRA_CONF_FILE="bad.conf"
+  sample.mcumgr_custom.bargraph:
+    extra_args: EXTRA_DTC_OVERLAY_FILE="boards/clicks/bargraph_slot3.overlay"
+  sample.mcumgr_custom.alcohol:
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE="boards/clicks/alcohol_slot1.overlay"
+      - EXTRA_CONF_FILE="boards/clicks/alcohol_slot1.conf"

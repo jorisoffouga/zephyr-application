@@ -12,6 +12,8 @@ framing, a small CBOR codec, and the commands of the sample:
   airq      [-w S] | --diag                       custom group 66
   pattern   get | start BANK NAME [-t MS] [-w N] | stop BANK   custom group 67
   alcohol   [-w S] [--calibrate | --baseline MV]  custom group 68
+  eeprom    info | read [OFF [LEN]] | write OFF HEX|-t TEXT | erase [OFF LEN]
+            | store [save|restore|clear|autosave-on|autosave-off]   custom group 69
   info   [-f FORMAT] | bootloader                 OS group
   echo   TEXT                                     OS group
   reset                                           OS group
@@ -133,7 +135,8 @@ def cbor_decode(data):
 
 OP_READ, OP_READ_RSP, OP_WRITE, OP_WRITE_RSP = 0, 1, 2, 3
 GRP_OS, GRP_IMG = 0, 1
-GRP_LED, GRP_BARGRAPH, GRP_AIRQ, GRP_PATTERN, GRP_ALCOHOL = 64, 65, 66, 67, 68  # include/app_mgmt.h
+GRP_LED, GRP_BARGRAPH, GRP_AIRQ, GRP_PATTERN, GRP_ALCOHOL, GRP_EEPROM = \
+    64, 65, 66, 67, 68, 69  # include/app_mgmt.h
 OS_ECHO, OS_RESET, OS_INFO, OS_BOOTLOADER_INFO = 0, 5, 7, 8
 IMG_STATE, IMG_UPLOAD = 0, 1
 LED_STATE, LED_VERSION = 0, 1
@@ -141,6 +144,8 @@ BARGRAPH_STATE = 0
 AIRQ_MEASURE, AIRQ_DIAG = 0, 1
 PATTERN_STATE = 0
 ALCOHOL_MEASURE = 0
+EEPROM_INFO, EEPROM_DATA, EEPROM_ERASE, EEPROM_STORE = 0, 1, 2, 3
+EEPROM_CHUNK = 256
 
 MCUBOOT_MODES = [  # enum mcuboot_mode, bootutil/boot_status.h
     "single slot", "swap using scratch", "upgrade only", "swap using move",
@@ -161,6 +166,8 @@ GROUP_ERR = {  # include/<group>_mgmt.h
     GRP_AIRQ: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INIT_PENDING"},
     GRP_PATTERN: {1: "UNKNOWN", 2: "INVALID_BANK", 3: "INVALID_PATTERN", 4: "INVALID_STEP"},
     GRP_ALCOHOL: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INVALID"},
+    GRP_EEPROM: {1: "UNKNOWN", 2: "NO_DEVICE", 3: "IO", 4: "INVALID_RANGE",
+                 5: "INVALID_ACTION", 6: "NO_RECORD", 7: "NO_STORE"},
 }
 
 
@@ -337,8 +344,8 @@ def airq_hint(d):
     if d["init"] == "ok":
         return "driver running"
     if not found:
-        return ("nothing answers at 0x5a / 0x5b on I2C1 (PB8 SCL, PB7 SDA): click "
-                "seated on mikroBUS 1? power, nWAKE (PB12), I2C pull-ups")
+        return ("nothing answers at 0x5a / 0x5b on I2C3 (PA8 SCL, PC9 SDA): click "
+                "seated on mikroBUS 3? power, nWAKE (PE5), I2C pull-ups")
     p = found[0]
     if p["addr"] != d["addr"]:
         return (f"CCS811 at 0x{p['addr']:02x} but the devicetree says 0x{d['addr']:02x}: "
@@ -400,6 +407,72 @@ def cmd_alcohol(smp, a):
         if not a.watch:
             return
         time.sleep(a.watch)
+
+
+def eeprom_read(smp, off, length):
+    """Reads off..off+length in 256-byte requests."""
+    out = bytearray()
+    while len(out) < length:
+        n = min(EEPROM_CHUNK, length - len(out))
+        rsp = smp.request(OP_READ, GRP_EEPROM, EEPROM_DATA, {"off": off + len(out), "len": n})
+        out += rsp["data"]
+    return bytes(out)
+
+
+def eeprom_write(smp, off, data):
+    for i in range(0, len(data), EEPROM_CHUNK):
+        smp.request(OP_WRITE, GRP_EEPROM, EEPROM_DATA,
+                    {"off": off + i, "data": data[i:i + EEPROM_CHUNK]})
+
+
+def hexdump(data, base):
+    for i in range(0, len(data), 16):
+        row = data[i:i + 16]
+        text = "".join(chr(b) if 32 <= b < 127 else "." for b in row)
+        print(f"{base + i:04x}  {row.hex(' '):<47}  {text}")
+
+
+def show_store(st):
+    print(f"settings: {'stored' if st['valid'] else 'none stored'}"
+          f"{', restored at boot' if st['restored'] else ''}; autosave "
+          f"{'on' if st['autosave'] else 'off'}{' (save pending)' if st['pending'] else ''}; "
+          f"{st['saves']} saves since boot"
+          f"{'' if not st['last_rc'] else ', last EEPROM error ' + str(st['last_rc'])}")
+
+
+def cmd_eeprom(smp, a):
+    if a.action == "info":
+        i = smp.request(OP_READ, GRP_EEPROM, EEPROM_INFO)
+        print(f"{i['chip']}: {i['size']} bytes, {i['page']}-byte pages")
+        if "store_off" in i:
+            print(f"LED settings at 0x{i['store_off']:03x}..0x{i['store_off'] + i['store_size'] - 1:03x}")
+            show_store(smp.request(OP_READ, GRP_EEPROM, EEPROM_STORE))
+    elif a.action == "read":
+        size = smp.request(OP_READ, GRP_EEPROM, EEPROM_INFO)["size"]
+        off = int(a.off, 0) if a.off else 0
+        length = int(a.len, 0) if a.len else size - off
+        hexdump(eeprom_read(smp, off, length), off)
+    elif a.action == "write":
+        data = a.text.encode() if a.text is not None else bytes.fromhex("".join(a.hex))
+        if not data:
+            raise SystemExit("give HEX bytes or -t TEXT")
+        eeprom_write(smp, int(a.off, 0), data)
+        print(f"wrote {len(data)} bytes at 0x{int(a.off, 0):03x} (read back: ok)")
+    elif a.action == "erase":
+        req = {}
+        if a.off is not None:
+            req["off"] = int(a.off, 0)
+        if a.len is not None:
+            req["len"] = int(a.len, 0)
+        r = smp.request(OP_WRITE, GRP_EEPROM, EEPROM_ERASE, req, timeout=30)
+        print(f"erased 0x{r['off']:03x} +{r['len']} (0xff)")
+    elif a.action == "store":
+        req = {"save": {"action": "save"}, "restore": {"action": "restore"},
+               "clear": {"action": "clear"}, "autosave-on": {"autosave": True},
+               "autosave-off": {"autosave": False}}.get(a.what)
+        st = (smp.request(OP_WRITE, GRP_EEPROM, EEPROM_STORE, req) if req
+              else smp.request(OP_READ, GRP_EEPROM, EEPROM_STORE))
+        show_store(st)
 
 
 def show_pattern(b):
@@ -573,6 +646,22 @@ def main():
     ag.add_argument("--baseline", type=int, metavar="MV",
                     help="set the baseline in mV (0: none)")
 
+    ee = sub.add_parser("eeprom", help="custom eeprom group: EEPROM click, LED settings")
+    esub = ee.add_subparsers(dest="action", required=True)
+    esub.add_parser("info")
+    sp = esub.add_parser("read", help="hex dump (default: all)")
+    sp.add_argument("off", nargs="?")
+    sp.add_argument("len", nargs="?")
+    sp = esub.add_parser("write", help="e.g. write 0x10 48656c6c6f, or write 0 -t hello")
+    sp.add_argument("off")
+    sp.add_argument("hex", nargs="*", help="bytes: 48656c6c6f or 48 65 6c 6c 6f")
+    sp.add_argument("-t", "--text")
+    sp = esub.add_parser("erase", help="fill with 0xff (default: all)")
+    sp.add_argument("off", nargs="?")
+    sp.add_argument("len", nargs="?")
+    esub.add_parser("store", help="LED settings record").add_argument(
+        "what", nargs="?", choices=["save", "restore", "clear", "autosave-on", "autosave-off"])
+
     sub.add_parser("version", help="custom group: application versions")
     sub.add_parser("info", help="OS group: uname-like info").add_argument(
         "-f", "--format", default="a", help="format letters (default a: all)")
@@ -600,6 +689,7 @@ def main():
             "bargraph": cmd_bargraph,
             "airq": cmd_airq,
             "alcohol": cmd_alcohol,
+            "eeprom": cmd_eeprom,
             "pattern": cmd_pattern,
             "version": cmd_version,
             "info": cmd_info,

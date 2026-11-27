@@ -18,6 +18,7 @@
 
 #include <app_version.h>
 
+#include "app_store.h"
 #include "led_ctrl.h"
 #include "pattern.h"
 #include "led_mgmt.h"
@@ -143,6 +144,7 @@ static int led_mgmt_state_write(struct smp_streamer *ctxt)
 	if (err != LED_MGMT_ERR_OK) {
 		ok = smp_add_cmd_err(zse, LED_MGMT_GROUP_ID, err);
 	} else {
+		app_store_changed();
 		ok = encode_led(zse, led);
 	}
 

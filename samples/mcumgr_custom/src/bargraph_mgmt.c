@@ -21,6 +21,7 @@
 #include <zcbor_encode.h>
 #include <mgmt/mcumgr/util/zcbor_bulk.h>
 
+#include "app_store.h"
 #include "bargraph_mgmt.h"
 #include "led_ctrl.h"
 #include "pattern.h"
@@ -167,6 +168,9 @@ static int bargraph_mgmt_state_write(struct smp_streamer *ctxt)
 	}
 
 	LOG_INF("mask 0x%03x, brightness %u%%", read_mask(first, count), brightness);
+	if (has_level || has_mask) {
+		app_store_changed();
+	}
 
 	return encode_state(zse, first, count) ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
 }

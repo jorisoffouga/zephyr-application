@@ -1,7 +1,8 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * Custom MCUmgr group "airq": Air Quality 3 click (CCS811) on mikroBUS 1.
+ * Custom MCUmgr group "airq": Air Quality 3 click (CCS811) on mikroBUS 3
+ * (I2C3).
  *
  * Group 66 (APP_MGMT_GROUP_AIRQ), command 0 "measure" (read only):
  *

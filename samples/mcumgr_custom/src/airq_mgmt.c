@@ -136,8 +136,8 @@ static void airq_init_work_fn(struct k_work *work)
 	const struct probe *found = p[0].ack ? &p[0] : (p[1].ack ? &p[1] : NULL);
 
 	if (found == NULL) {
-		LOG_ERR("hint: nothing answers on I2C1 (PB8 SCL / PB7 SDA): click "
-			"seated on mikroBUS 1? nWAKE (PB12), I2C pull-ups, power");
+		LOG_ERR("hint: nothing answers on I2C3 (PA8 SCL / PC9 SDA): click "
+			"seated on mikroBUS 3? nWAKE (PE5), I2C pull-ups, power");
 	} else if (found->addr != DT_REG_ADDR(CCS811_NODE)) {
 		LOG_ERR("hint: CCS811 at 0x%02x, devicetree says 0x%02x: fix reg "
 			"in boards/stm32f4_disco.overlay (or the ADDR jumper)",
