@@ -1,8 +1,0 @@
-&i2c0 {
-    status = "okay";
-    lm75a@4b {
-        compatible = "nxp,lm75a";
-        reg = <0x4b>;
-        label = "LM75A";
-    };
-};
