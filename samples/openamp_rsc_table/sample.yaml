@@ -5,5 +5,5 @@ sample:
 tests:
     sample.subsys.ipc.openamp_rs_table:
         build_only: true
-        platform_allow: stm32mp157c_dk2
+        platform_allow: stm32mp157x_dk2/stm32mp157cxx
         tags: ipm
