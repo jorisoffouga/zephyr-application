@@ -678,7 +678,7 @@ def main():
     up = isub.add_parser("upload")
     up.add_argument("file")
     up.add_argument("--chunk", type=int, default=128,
-                    help="data bytes per request (fit CONFIG_MCUMGR_TRANSPORT_UART_MTU)")
+                    help="data bytes per request (fit CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE)")
     up.add_argument("--test", action="store_true", help="mark slot 1 for test")
     up.add_argument("--reset", action="store_true", help="reset after upload")
     isub.add_parser("test").add_argument("hash")

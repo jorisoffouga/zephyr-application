@@ -144,7 +144,7 @@ def parse_image(data):
 class FirmwareJob(threading.Thread):
     """One update at a time; on_change(status) at each step and percent."""
 
-    CHUNK = 512  # data bytes per upload request (fits the 1536 MTU)
+    CHUNK = 512  # data bytes per upload request (fits NETBUF_SIZE 1536)
 
     def __init__(self, link, data, name, confirm, on_change=None):
         super().__init__(daemon=True)

@@ -149,7 +149,7 @@ expander and bargraph LEDs are SPI writes, which cannot run in an ISR.
   LEDs and the patterns come back from the EEPROM click (see "The
   eeprom protocol"); without it they are off.
 * `led get` answers about 1 KiB of CBOR, hence
-  `CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE` / `_UART_MTU` = 1536 in `prj.conf`.
+  `CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE` = 1536 in `prj.conf`.
 
 ## The bargraph protocol (group 65)
 
@@ -606,4 +606,5 @@ The LED group stays usable between updates: `$C led ...` then
 
 Requests sent during boot or swap are lost (MCUboot has no SMP here).
 The client retries on timeout, and `reset` waits up to 120 s. For faster
-uploads, raise `CONFIG_MCUMGR_TRANSPORT_UART_MTU` and `--chunk` together.
+uploads, raise `--chunk` (up to what fits `CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE`;
+the web UI uses 512).
